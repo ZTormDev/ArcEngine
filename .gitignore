@@ -1,0 +1,42 @@
+# Build output
+Build/
+
+# vcpkg installed artifacts
+vcpkg_installed/
+
+# Compiled Filament materials (generated from .mat sources)
+*.filamat
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.sln.docstates
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CMakeUserPresets.json
+
+# Compiled binaries and intermediate files
+*.obj
+*.lib
+*.exe
+*.dll
+*.exp
+*.pdb
+*.ilk
+*.pch
+*.ipdb
+*.iobj
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# IDE/editor local settings (uncomment if you don't want to track .vscode)
+# .vscode/

@@ -1,0 +1,11 @@
+{
+  "name": "arc-engine",
+  "version": "0.1.0",
+  "dependencies": [
+    "sdl2",
+    "glm",
+    "stb",
+    "entt",
+    "spdlog"
+  ]
+}

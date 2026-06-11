@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "ArcGame Debug",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/Build/windows-debug/Game/ArcGame.exe",
+      "args": [],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}/Build/windows-debug/Game",
+      "environment": [],
+      "console": "integratedTerminal",
+      "preLaunchTask": "Arc: Build Only"
+    }
+  ]
+}

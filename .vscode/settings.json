@@ -1,0 +1,8 @@
+{
+  "cmake.configureOnOpen": false,
+  "cmake.useCMakePresets": "always",
+  "cmake.buildDirectory": "${workspaceFolder}/Build/${buildPresetName}",
+  "files.associations": {
+    "*.mat": "glsl"
+  }
+}
