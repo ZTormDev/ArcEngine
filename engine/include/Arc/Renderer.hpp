@@ -117,6 +117,18 @@ namespace Arc
         [[nodiscard]] std::uint32_t height() const;
         [[nodiscard]] const RenderStats& stats() const;
 
+        void setPostProcessingMode(int mode) { m_postProcessMode = mode; }
+        [[nodiscard]] int postProcessingMode() const { return m_postProcessMode; }
+
+        void setExposure(float exposure) { m_exposure = exposure; }
+        [[nodiscard]] float exposure() const { return m_exposure; }
+
+        void setBloomIntensity(float intensity) { m_bloomIntensity = intensity; }
+        [[nodiscard]] float bloomIntensity() const { return m_bloomIntensity; }
+
+        void setBloomThreshold(float threshold) { m_bloomThreshold = threshold; }
+        [[nodiscard]] float bloomThreshold() const { return m_bloomThreshold; }
+
     private:
         struct Handles;
 
@@ -145,5 +157,9 @@ namespace Arc
         float m_cascadeSplits[4] = { 0.0f };
         bool m_sceneActive = false;
         bool m_initialized = false;
+        int m_postProcessMode = 0; // 0 = Full HDR, 1 = Raw bypass, 2 = LDR
+        float m_exposure = 1.15f;
+        float m_bloomIntensity = 0.25f;
+        float m_bloomThreshold = 0.5f;
     };
 }

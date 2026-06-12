@@ -58,6 +58,7 @@ if(COMMAND bgfx_compile_shaders)
             "${ARC_SHADER_SOURCE_DIR}/vs_mesh.sc"
             "${ARC_SHADER_SOURCE_DIR}/vs_sky.sc"
             "${ARC_SHADER_SOURCE_DIR}/vs_shadow.sc"
+            "${ARC_SHADER_SOURCE_DIR}/vs_post.sc"
         VARYING_DEF "${ARC_SHADER_SOURCE_DIR}/varying.def.sc"
         OUTPUT_DIR "${ARC_SHADER_OUTPUT_DIR}"
         OUT_FILES_VAR ARC_VERTEX_SHADER_OUTPUTS
@@ -70,6 +71,9 @@ if(COMMAND bgfx_compile_shaders)
             "${ARC_SHADER_SOURCE_DIR}/fs_mesh.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_sky.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_shadow.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_bloom_down.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_bloom_up.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_post.sc"
         VARYING_DEF "${ARC_SHADER_SOURCE_DIR}/varying.def.sc"
         OUTPUT_DIR "${ARC_SHADER_OUTPUT_DIR}"
         OUT_FILES_VAR ARC_FRAGMENT_SHADER_OUTPUTS

@@ -15,6 +15,8 @@
 #include <string>
 #include <utility>
 
+#include <iostream>
+
 namespace Arc
 {
     namespace
@@ -100,6 +102,7 @@ namespace Arc
         }
         catch(const std::exception& error)
         {
+            std::cerr << "Application Exception: " << error.what() << std::endl;
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Arc Engine", error.what(), m_window);
             shutdown();
             return -1;
@@ -361,6 +364,33 @@ namespace Arc
         case SDL_SCANCODE_LSHIFT:
         case SDL_SCANCODE_RSHIFT:
             m_input->setKey(Key::LeftShift, pressed);
+            break;
+        case SDL_SCANCODE_1:
+            m_input->setKey(Key::Num1, pressed);
+            break;
+        case SDL_SCANCODE_2:
+            m_input->setKey(Key::Num2, pressed);
+            break;
+        case SDL_SCANCODE_3:
+            m_input->setKey(Key::Num3, pressed);
+            break;
+        case SDL_SCANCODE_I:
+            m_input->setKey(Key::I, pressed);
+            break;
+        case SDL_SCANCODE_O:
+            m_input->setKey(Key::O, pressed);
+            break;
+        case SDL_SCANCODE_K:
+            m_input->setKey(Key::K, pressed);
+            break;
+        case SDL_SCANCODE_L:
+            m_input->setKey(Key::L, pressed);
+            break;
+        case SDL_SCANCODE_U:
+            m_input->setKey(Key::U, pressed);
+            break;
+        case SDL_SCANCODE_J:
+            m_input->setKey(Key::J, pressed);
             break;
         case SDL_SCANCODE_ESCAPE:
             m_input->setKey(Key::Escape, pressed);

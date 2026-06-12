@@ -29,6 +29,50 @@ private:
 
         m_cubeRotation += deltaSeconds * 0.6f;
         m_scene.objects()[m_animatedCubeIndex].transform.rotation = { m_cubeRotation * 0.4f, m_cubeRotation, 0.0f };
+
+        // Post-processing mode toggling
+        if (input().isKeyDown(Arc::Key::Num1))
+        {
+            renderer().setPostProcessingMode(0); // Full HDR
+        }
+        else if (input().isKeyDown(Arc::Key::Num2))
+        {
+            renderer().setPostProcessingMode(1); // Raw Bypass
+        }
+        else if (input().isKeyDown(Arc::Key::Num3))
+        {
+            renderer().setPostProcessingMode(2); // LDR
+        }
+
+        // Adjust post-processing exposure
+        if (input().isKeyDown(Arc::Key::I))
+        {
+            renderer().setExposure(renderer().exposure() + deltaSeconds * 1.5f);
+        }
+        if (input().isKeyDown(Arc::Key::O))
+        {
+            renderer().setExposure(std::max(0.0f, renderer().exposure() - deltaSeconds * 1.5f));
+        }
+
+        // Adjust bloom intensity
+        if (input().isKeyDown(Arc::Key::K))
+        {
+            renderer().setBloomIntensity(renderer().bloomIntensity() + deltaSeconds * 1.0f);
+        }
+        if (input().isKeyDown(Arc::Key::L))
+        {
+            renderer().setBloomIntensity(std::max(0.0f, renderer().bloomIntensity() - deltaSeconds * 1.0f));
+        }
+
+        // Adjust bloom threshold
+        if (input().isKeyDown(Arc::Key::U))
+        {
+            renderer().setBloomThreshold(renderer().bloomThreshold() + deltaSeconds * 1.0f);
+        }
+        if (input().isKeyDown(Arc::Key::J))
+        {
+            renderer().setBloomThreshold(std::max(0.0f, renderer().bloomThreshold() - deltaSeconds * 1.0f));
+        }
     }
 
     void onRender(Arc::Renderer& renderer) override
@@ -57,6 +101,11 @@ private:
         const Arc::Material blackRubber{ { 0.015f, 0.014f, 0.013f, 1.0f }, 0.0f, 0.92f, 0.0f };
         const Arc::Material whiteCeramic{ { 0.92f, 0.90f, 0.86f, 1.0f }, 0.0f, 0.18f, 0.0f };
 
+        // Emissive Glowing Materials for showcasing Post-Processing Bloom
+        const Arc::Material neonGreen{ { 0.10f, 0.95f, 0.20f, 1.0f }, 0.0f, 0.5f, 10.0f };
+        const Arc::Material neonOrange{ { 0.98f, 0.50f, 0.05f, 1.0f }, 0.0f, 0.5f, 8.0f };
+        const Arc::Material neonPink{ { 0.95f, 0.15f, 0.60f, 1.0f }, 0.0f, 0.5f, 12.0f };
+
         m_scene.addCube("Back Wall", { { 0.0f, 2.0f, -6.2f }, {}, { 8.0f, 2.0f, 0.18f } }, warmWall);
         m_scene.addCube("Left Wall", { { -8.0f, 2.0f, 0.0f }, {}, { 0.18f, 2.0f, 6.2f } }, darkConcrete);
         m_scene.addCube("Right Wall", { { 8.0f, 2.0f, 0.0f }, {}, { 0.18f, 2.0f, 6.2f } }, darkConcrete);
@@ -70,6 +119,11 @@ private:
         m_scene.addSphere("Metal Sphere", { { -1.9f, 0.75f, 2.2f }, {}, { 0.75f, 0.75f, 0.75f } }, brushedMetal);
         m_scene.addSphere("Ceramic Sphere", { { 2.0f, 0.65f, 1.8f }, {}, { 0.65f, 0.65f, 0.65f } }, whiteCeramic);
         m_scene.addSphere("Rubber Sphere", { { 4.1f, 0.5f, 1.0f }, {}, { 0.5f, 0.5f, 0.5f } }, blackRubber);
+
+        // Add Glowing Neon Objects to the scene
+        m_scene.addCube("Neon Green Cube", { { -5.4f, 2.1f, 3.8f }, {}, { 0.4f, 0.4f, 0.4f } }, neonGreen);
+        m_scene.addSphere("Neon Orange Sphere", { { 5.4f, 2.1f, 3.8f }, {}, { 0.4f, 0.4f, 0.4f } }, neonOrange);
+        m_scene.addCube("Neon Pink Cube", { { 0.0f, 1.2f, -3.5f }, {}, { 0.5f, 0.5f, 0.5f } }, neonPink);
     }
 
     Arc::FreeCamera m_camera;

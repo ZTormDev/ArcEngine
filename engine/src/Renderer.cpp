@@ -27,6 +27,15 @@ namespace Arc
     constexpr bgfx::ViewId ViewIdShadow3 = 3;
     constexpr bgfx::ViewId ViewIdSkybox  = 4;
     constexpr bgfx::ViewId ViewIdScene   = 5;
+    constexpr bgfx::ViewId ViewIdBloomDown0 = 6;
+    constexpr bgfx::ViewId ViewIdBloomDown1 = 7;
+    constexpr bgfx::ViewId ViewIdBloomDown2 = 8;
+    constexpr bgfx::ViewId ViewIdBloomDown3 = 9;
+    constexpr bgfx::ViewId ViewIdBloomUp0   = 10;
+    constexpr bgfx::ViewId ViewIdBloomUp1   = 11;
+    constexpr bgfx::ViewId ViewIdBloomUp2   = 12;
+    constexpr bgfx::ViewId ViewIdPostProcess = 13;
+    constexpr bgfx::ViewId ViewCount       = 14;
 
     namespace
     {
@@ -50,6 +59,55 @@ namespace Arc
         };
 
         bgfx::VertexLayout PosNormalColorVertex::layout;
+
+        struct PostProcessVertex
+        {
+            float x;
+            float y;
+            float z;
+            float u;
+            float v;
+
+            static bgfx::VertexLayout layout;
+        };
+
+        bgfx::VertexLayout PostProcessVertex::layout;
+
+        void renderFullScreenQuad(bgfx::ViewId viewId, bgfx::ProgramHandle program)
+        {
+            bgfx::TransientVertexBuffer tvb;
+            bgfx::allocTransientVertexBuffer(&tvb, 3, PostProcessVertex::layout);
+            if (tvb.data == nullptr)
+            {
+                return;
+            }
+
+            PostProcessVertex* vertices = reinterpret_cast<PostProcessVertex*>(tvb.data);
+
+            bool originBottomLeft = bgfx::getCaps()->originBottomLeft;
+
+            vertices[0].x = -1.0f;
+            vertices[0].y = -1.0f;
+            vertices[0].z = 0.0f;
+            vertices[0].u = 0.0f;
+            vertices[0].v = originBottomLeft ? 0.0f : 1.0f;
+
+            vertices[1].x = 3.0f;
+            vertices[1].y = -1.0f;
+            vertices[1].z = 0.0f;
+            vertices[1].u = 2.0f;
+            vertices[1].v = originBottomLeft ? 0.0f : 1.0f;
+
+            vertices[2].x = -1.0f;
+            vertices[2].y = 3.0f;
+            vertices[2].z = 0.0f;
+            vertices[2].u = 0.0f;
+            vertices[2].v = originBottomLeft ? 2.0f : -1.0f;
+
+            bgfx::setVertexBuffer(0, &tvb);
+            bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_DEPTH_TEST_ALWAYS);
+            bgfx::submit(viewId, program);
+        }
 
         constexpr std::uint32_t White = 0xffffffffu;
         constexpr std::uint32_t DefaultTextureId = UINT32_MAX;
@@ -210,6 +268,20 @@ namespace Arc
 
     struct Renderer::Handles
     {
+        Handles()
+        {
+            for (int i = 0; i < 4; ++i)
+            {
+                bloomDownTextures[i] = BGFX_INVALID_HANDLE;
+                bloomDownFrameBuffers[i] = BGFX_INVALID_HANDLE;
+            }
+            for (int i = 0; i < 3; ++i)
+            {
+                bloomUpTextures[i] = BGFX_INVALID_HANDLE;
+                bloomUpFrameBuffers[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
         struct GpuMesh
         {
             bgfx::VertexBufferHandle vertexBuffer = BGFX_INVALID_HANDLE;
@@ -254,6 +326,24 @@ namespace Arc
         bgfx::UniformHandle shadowMapSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cameraForwardUniform = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cascadeSplitsUniform = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle hdrColorTexture = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle hdrDepthTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle hdrFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle bloomDownTextures[4];
+        bgfx::FrameBufferHandle bloomDownFrameBuffers[4];
+        bgfx::TextureHandle bloomUpTextures[3];
+        bgfx::FrameBufferHandle bloomUpFrameBuffers[3];
+        bgfx::ProgramHandle bloomDownProgram = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle bloomUpProgram = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle postProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle downParamsUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle upParamsUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle postParamsUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle textureSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle sceneTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle bloomTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle lowTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle highTexSampler = BGFX_INVALID_HANDLE;
         std::vector<GpuMesh> gpuMeshes;
         std::vector<GpuTexture> gpuTextures;
         std::unordered_map<std::string, TextureHandle> textureCache;
@@ -281,6 +371,12 @@ namespace Arc
             .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
             .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
             .add(bgfx::Attrib::Tangent, 4, bgfx::AttribType::Float)
+            .end();
+
+        PostProcessVertex::layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
             .end();
 
         createGeometry();
@@ -321,6 +417,34 @@ namespace Arc
             m_handles->shadowTexture = BGFX_INVALID_HANDLE;
         }
 
+        if(bgfx::isValid(m_handles->hdrFrameBuffer))
+        {
+            bgfx::destroy(m_handles->hdrFrameBuffer);
+            m_handles->hdrFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->hdrColorTexture = BGFX_INVALID_HANDLE;
+            m_handles->hdrDepthTexture = BGFX_INVALID_HANDLE;
+        }
+
+        for (int i = 0; i < 4; ++i)
+        {
+            if (bgfx::isValid(m_handles->bloomDownFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->bloomDownFrameBuffers[i]);
+                m_handles->bloomDownFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->bloomDownTextures[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
+        for (int i = 0; i < 3; ++i)
+        {
+            if (bgfx::isValid(m_handles->bloomUpFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->bloomUpFrameBuffers[i]);
+                m_handles->bloomUpFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->bloomUpTextures[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
         destroyPrograms();
         destroyGeometry();
 
@@ -349,21 +473,121 @@ namespace Arc
         bgfx::setViewClear(ViewIdShadow2, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
         bgfx::setViewClear(ViewIdShadow3, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
 
-        // Configure skybox and scene views (Views 4 and 5) to draw on the backbuffer (full screen)
-        bgfx::setViewFrameBuffer(ViewIdSkybox, BGFX_INVALID_HANDLE);
+        // Destroy existing HDR resources if valid
+        if(bgfx::isValid(m_handles->hdrFrameBuffer))
+        {
+            bgfx::destroy(m_handles->hdrFrameBuffer);
+            m_handles->hdrFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->hdrColorTexture = BGFX_INVALID_HANDLE;
+            m_handles->hdrDepthTexture = BGFX_INVALID_HANDLE;
+        }
+
+        for (int i = 0; i < 4; ++i)
+        {
+            if (bgfx::isValid(m_handles->bloomDownFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->bloomDownFrameBuffers[i]);
+                m_handles->bloomDownFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->bloomDownTextures[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
+        for (int i = 0; i < 3; ++i)
+        {
+            if (bgfx::isValid(m_handles->bloomUpFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->bloomUpFrameBuffers[i]);
+                m_handles->bloomUpFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->bloomUpTextures[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
+        // 1. Create HDR Framebuffer & textures
+        std::uint64_t rtFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        m_handles->hdrColorTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::RGBA16F,
+            rtFlags
+        );
+        m_handles->hdrDepthTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::D32F,
+            rtFlags
+        );
+
+        bgfx::Attachment hdrAttachments[2];
+        hdrAttachments[0].init(m_handles->hdrColorTexture, bgfx::Access::Write);
+        hdrAttachments[1].init(m_handles->hdrDepthTexture, bgfx::Access::Write);
+        m_handles->hdrFrameBuffer = bgfx::createFrameBuffer(2, hdrAttachments, true);
+
+        // 2. Create Bloom Downsample levels (W/2, W/4, W/8, W/16)
+        std::uint16_t w = static_cast<std::uint16_t>(m_width);
+        std::uint16_t h = static_cast<std::uint16_t>(m_height);
+        for (int i = 0; i < 4; ++i)
+        {
+            w = std::max<std::uint16_t>(1, w / 2);
+            h = std::max<std::uint16_t>(1, h / 2);
+            m_handles->bloomDownTextures[i] = bgfx::createTexture2D(w, h, false, 1, bgfx::TextureFormat::RGBA16F, rtFlags);
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->bloomDownTextures[i], bgfx::Access::Write);
+            m_handles->bloomDownFrameBuffers[i] = bgfx::createFrameBuffer(1, &attachment, true);
+
+            // Configure views for downsample
+            bgfx::ViewId viewId = static_cast<bgfx::ViewId>(ViewIdBloomDown0 + i);
+            bgfx::setViewFrameBuffer(viewId, m_handles->bloomDownFrameBuffers[i]);
+            bgfx::setViewRect(viewId, 0, 0, w, h);
+            bgfx::setViewClear(viewId, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+        }
+
+        // 3. Create Bloom Upsample levels
+        std::uint16_t upSizes[3][2];
+        upSizes[0][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 8);
+        upSizes[0][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 8);
+        upSizes[1][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 4);
+        upSizes[1][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 4);
+        upSizes[2][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 2);
+        upSizes[2][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 2);
+
+        for (int i = 0; i < 3; ++i)
+        {
+            m_handles->bloomUpTextures[i] = bgfx::createTexture2D(upSizes[i][0], upSizes[i][1], false, 1, bgfx::TextureFormat::RGBA16F, rtFlags);
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->bloomUpTextures[i], bgfx::Access::Write);
+            m_handles->bloomUpFrameBuffers[i] = bgfx::createFrameBuffer(1, &attachment, true);
+
+            // Configure views for upsample
+            bgfx::ViewId viewId = static_cast<bgfx::ViewId>(ViewIdBloomUp0 + i);
+            bgfx::setViewFrameBuffer(viewId, m_handles->bloomUpFrameBuffers[i]);
+            bgfx::setViewRect(viewId, 0, 0, upSizes[i][0], upSizes[i][1]);
+            bgfx::setViewClear(viewId, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+        }
+
+        // 4. Configure skybox and scene views (Views 4 and 5) to draw on the HDR framebuffer
+        bgfx::setViewFrameBuffer(ViewIdSkybox, m_handles->hdrFrameBuffer);
         bgfx::setViewRect(ViewIdSkybox, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
         bgfx::setViewClear(ViewIdSkybox, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x101820ff, 1.0f, 0);
 
-        bgfx::setViewFrameBuffer(ViewIdScene, BGFX_INVALID_HANDLE);
+        bgfx::setViewFrameBuffer(ViewIdScene, m_handles->hdrFrameBuffer);
         bgfx::setViewRect(ViewIdScene, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
         bgfx::setViewClear(ViewIdScene, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 5. Configure final Postprocess view (View 13) to draw on the backbuffer
+        bgfx::setViewFrameBuffer(ViewIdPostProcess, BGFX_INVALID_HANDLE);
+        bgfx::setViewRect(ViewIdPostProcess, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdPostProcess, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000ff, 1.0f, 0);
     }
 
     void Renderer::beginFrame()
     {
         m_stats = {};
         bgfx::dbgTextClear();
-        for (bgfx::ViewId i = 0; i < 6; ++i)
+        for (bgfx::ViewId i = 0; i < ViewCount; ++i)
         {
             bgfx::touch(i);
         }
@@ -891,11 +1115,86 @@ namespace Arc
 
     void Renderer::endFrame()
     {
+        // 1. Bloom Downsample passes
+        // Pass 0: Downsample HDR scene texture to bloomDownTextures[0] and apply prefilter
+        {
+            float downParams[4] = { m_bloomThreshold, 1.0f / static_cast<float>(m_width), 1.0f / static_cast<float>(m_height), 0.0f };
+            bgfx::setUniform(m_handles->downParamsUniform, downParams);
+            bgfx::setTexture(0, m_handles->textureSampler, m_handles->hdrColorTexture);
+            renderFullScreenQuad(ViewIdBloomDown0, m_handles->bloomDownProgram);
+        }
+
+        // Pass 1 to 3: Successively downsample bloom mips
+        std::uint16_t currentW = static_cast<std::uint16_t>(m_width / 2);
+        std::uint16_t currentH = static_cast<std::uint16_t>(m_height / 2);
+        for (int i = 1; i < 4; ++i)
+        {
+            bgfx::ViewId viewId = static_cast<bgfx::ViewId>(ViewIdBloomDown0 + i);
+            float downParams[4] = { 1.0f, 1.0f / static_cast<float>(currentW), 1.0f / static_cast<float>(currentH), 1.0f }; // passIndex = 1 (no threshold)
+            bgfx::setUniform(m_handles->downParamsUniform, downParams);
+            bgfx::setTexture(0, m_handles->textureSampler, m_handles->bloomDownTextures[i - 1]);
+            renderFullScreenQuad(viewId, m_handles->bloomDownProgram);
+
+            currentW = std::max<std::uint16_t>(1, currentW / 2);
+            currentH = std::max<std::uint16_t>(1, currentH / 2);
+        }
+
+        // 2. Bloom Upsample passes
+        std::uint16_t upSizes[3][2];
+        upSizes[0][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 8);
+        upSizes[0][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 8);
+        upSizes[1][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 4);
+        upSizes[1][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 4);
+        upSizes[2][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 2);
+        upSizes[2][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 2);
+
+        // Pass 0: Upsample from bloomDownTextures[3] (W/16) + bloomDownTextures[2] (W/8) to bloomUpTextures[0] (W/8)
+        {
+            float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[0][0] / 2), 1.0f / static_cast<float>(upSizes[0][1] / 2), 0.85f };
+            bgfx::setUniform(m_handles->upParamsUniform, upParams);
+            bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomDownTextures[3]);
+            bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[2]);
+            renderFullScreenQuad(ViewIdBloomUp0, m_handles->bloomUpProgram);
+        }
+
+        // Pass 1: Upsample from bloomUpTextures[0] (W/8) + bloomDownTextures[1] (W/4) to bloomUpTextures[1] (W/4)
+        {
+            float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[1][0] / 2), 1.0f / static_cast<float>(upSizes[1][1] / 2), 0.85f };
+            bgfx::setUniform(m_handles->upParamsUniform, upParams);
+            bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomUpTextures[0]);
+            bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[1]);
+            renderFullScreenQuad(ViewIdBloomUp1, m_handles->bloomUpProgram);
+        }
+
+        // Pass 2: Upsample from bloomUpTextures[1] (W/4) + bloomDownTextures[0] (W/2) to bloomUpTextures[2] (W/2)
+        {
+            float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[2][0] / 2), 1.0f / static_cast<float>(upSizes[2][1] / 2), 0.85f };
+            bgfx::setUniform(m_handles->upParamsUniform, upParams);
+            bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomUpTextures[1]);
+            bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[0]);
+            renderFullScreenQuad(ViewIdBloomUp2, m_handles->bloomUpProgram);
+        }
+
+        // 3. Final Postprocess pass (combines HDR scene and bloomUpTextures[2] (W/2) to backbuffer)
+        {
+            float postParams[4] = { m_exposure, m_bloomIntensity, static_cast<float>(m_postProcessMode), 0.0f }; // exposure, bloomIntensity, mode, reserved
+            bgfx::setUniform(m_handles->postParamsUniform, postParams);
+            bgfx::setTexture(0, m_handles->sceneTexSampler, m_handles->hdrColorTexture);
+            bgfx::setTexture(1, m_handles->bloomTexSampler, m_handles->bloomUpTextures[2]);
+            renderFullScreenQuad(ViewIdPostProcess, m_handles->postProgram);
+        }
+
+        // Output debug text on the final post-process view
         bgfx::dbgTextPrintf(1, 1, 0x4f, "Arc Engine");
         bgfx::dbgTextPrintf(1, 2, 0x0f, "Renderer: %s", bgfx::getRendererName(bgfx::getRendererType()));
         bgfx::dbgTextPrintf(1, 3, 0x0f, "FPS: %.1f", m_fps);
         bgfx::dbgTextPrintf(1, 4, 0x0f, "Draw calls: %u | Meshes: %u | Shadows: Active", m_stats.drawCalls, m_stats.meshDraws);
-        bgfx::dbgTextPrintf(1, 5, 0x0f, "Move: WASD/QE | Look: hold RMB | Fast: Shift | Quit: Esc");
+
+        const char* modeNames[] = { "Full HDR (Postprocessing Active)", "Raw Bypass (No Tonemap/Gamma/Bloom)", "LDR (Gamma 2.2 Only)" };
+        bgfx::dbgTextPrintf(1, 5, 0x0a, "Post-Processing Mode [1/2/3]: %s", modeNames[m_postProcessMode]);
+        bgfx::dbgTextPrintf(1, 6, 0x0b, "Exposure [I/O]: %.2f | Bloom Intensity [K/L]: %.2f | Bloom Threshold [U/J]: %.2f", m_exposure, m_bloomIntensity, m_bloomThreshold);
+        bgfx::dbgTextPrintf(1, 7, 0x0f, "Controls: Move: WASD/QE | Look: hold RMB | Fast: Shift | Quit: Esc");
+
         bgfx::frame();
     }
 
@@ -989,8 +1288,13 @@ namespace Arc
         m_handles->meshProgram = loadProgram(shaderPath("vs_mesh.sc.bin"), shaderPath("fs_mesh.sc.bin"));
         m_handles->skyProgram = loadProgram(shaderPath("vs_sky.sc.bin"), shaderPath("fs_sky.sc.bin"));
         m_handles->shadowProgram = loadProgram(shaderPath("vs_shadow.sc.bin"), shaderPath("fs_shadow.sc.bin"));
+        m_handles->bloomDownProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_bloom_down.sc.bin"));
+        m_handles->bloomUpProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_bloom_up.sc.bin"));
+        m_handles->postProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_post.sc.bin"));
 
-        if(!valid(m_handles->meshProgram) || !valid(m_handles->skyProgram) || !valid(m_handles->shadowProgram))
+        if(!valid(m_handles->meshProgram) || !valid(m_handles->skyProgram) || 
+           !valid(m_handles->shadowProgram) || !valid(m_handles->bloomDownProgram) || 
+           !valid(m_handles->bloomUpProgram) || !valid(m_handles->postProgram))
         {
             throw std::runtime_error("Failed to create BGFX shader programs.");
         }
@@ -1013,6 +1317,14 @@ namespace Arc
         m_handles->shadowMapSampler = bgfx::createUniform("s_shadowMap", bgfx::UniformType::Sampler);
         m_handles->cameraForwardUniform = bgfx::createUniform("u_cameraForward", bgfx::UniformType::Vec4);
         m_handles->cascadeSplitsUniform = bgfx::createUniform("u_cascadeSplits", bgfx::UniformType::Vec4);
+        m_handles->downParamsUniform = bgfx::createUniform("u_downParams", bgfx::UniformType::Vec4);
+        m_handles->upParamsUniform = bgfx::createUniform("u_upParams", bgfx::UniformType::Vec4);
+        m_handles->postParamsUniform = bgfx::createUniform("u_postParams", bgfx::UniformType::Vec4);
+        m_handles->textureSampler = bgfx::createUniform("s_texture", bgfx::UniformType::Sampler);
+        m_handles->sceneTexSampler = bgfx::createUniform("s_sceneTex", bgfx::UniformType::Sampler);
+        m_handles->bloomTexSampler = bgfx::createUniform("s_bloomTex", bgfx::UniformType::Sampler);
+        m_handles->lowTexSampler = bgfx::createUniform("s_lowTex", bgfx::UniformType::Sampler);
+        m_handles->highTexSampler = bgfx::createUniform("s_highTex", bgfx::UniformType::Sampler);
     }
 
     void Renderer::destroyGeometry()
@@ -1220,6 +1532,72 @@ namespace Arc
         {
             bgfx::destroy(m_handles->cascadeSplitsUniform);
             m_handles->cascadeSplitsUniform = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->bloomDownProgram))
+        {
+            bgfx::destroy(m_handles->bloomDownProgram);
+            m_handles->bloomDownProgram = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->bloomUpProgram))
+        {
+            bgfx::destroy(m_handles->bloomUpProgram);
+            m_handles->bloomUpProgram = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->postProgram))
+        {
+            bgfx::destroy(m_handles->postProgram);
+            m_handles->postProgram = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->downParamsUniform))
+        {
+            bgfx::destroy(m_handles->downParamsUniform);
+            m_handles->downParamsUniform = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->upParamsUniform))
+        {
+            bgfx::destroy(m_handles->upParamsUniform);
+            m_handles->upParamsUniform = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->postParamsUniform))
+        {
+            bgfx::destroy(m_handles->postParamsUniform);
+            m_handles->postParamsUniform = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->textureSampler))
+        {
+            bgfx::destroy(m_handles->textureSampler);
+            m_handles->textureSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->sceneTexSampler))
+        {
+            bgfx::destroy(m_handles->sceneTexSampler);
+            m_handles->sceneTexSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->bloomTexSampler))
+        {
+            bgfx::destroy(m_handles->bloomTexSampler);
+            m_handles->bloomTexSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->lowTexSampler))
+        {
+            bgfx::destroy(m_handles->lowTexSampler);
+            m_handles->lowTexSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->highTexSampler))
+        {
+            bgfx::destroy(m_handles->highTexSampler);
+            m_handles->highTexSampler = BGFX_INVALID_HANDLE;
         }
     }
 

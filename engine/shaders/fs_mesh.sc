@@ -214,8 +214,6 @@ void main()
     vec3 ambient = albedo * u_ambientColor.rgb * u_ambientColor.a * (1.0 - metallic) * ao;
     vec3 emissive = albedo * emissiveSample * emissiveStrength;
 
-    vec3 color = (direct + ambient + emissive) * max(u_cameraData.w, 0.001);
-    color = acesTonemap(color);
-    color = pow(color, vec3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
+    vec3 color = (direct + ambient + emissive);
     gl_FragColor = vec4(color, u_tint.a * v_color0.a * albedoSample.a);
 }
