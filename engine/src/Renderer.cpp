@@ -287,11 +287,11 @@ namespace Arc
         createDefaultTextures();
         createPrograms();
 
-        // Create 4096x4096 shadow depth texture and framebuffer
+        // Create 8192x8192 shadow depth texture and framebuffer
         std::uint64_t shadowTextureFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LEQUAL;
         m_handles->shadowTexture = bgfx::createTexture2D(
-            4096,
-            4096,
+            8192,
+            8192,
             false,
             1,
             bgfx::TextureFormat::D32F,
@@ -334,13 +334,13 @@ namespace Arc
         m_width = width > 0 ? width : 1;
         m_height = height > 0 ? height : 1;
 
-        // Configure the 4 shadow cascade views in a 2x2 grid in the 4096x4096 framebuffer
+        // Configure the 4 shadow cascade views in a 2x2 grid in the 8192x8192 framebuffer
         for (bgfx::ViewId i = 0; i < 4; ++i)
         {
             bgfx::setViewFrameBuffer(i, m_handles->shadowFrameBuffer);
-            std::uint16_t x = (i % 2) * 2048;
-            std::uint16_t y = (i / 2) * 2048;
-            bgfx::setViewRect(i, x, y, 2048, 2048);
+            std::uint16_t x = (i % 2) * 4096;
+            std::uint16_t y = (i / 2) * 4096;
+            bgfx::setViewRect(i, x, y, 4096, 4096);
         }
 
         // Configure clears: clear the depth buffer for all shadow cascade quadrants
@@ -604,7 +604,7 @@ namespace Arc
         float tanHalfFovy = std::tan(fovRad * 0.5f);
         float tanHalfFovx = tanHalfFovy * aspect;
 
-        float cascadeSplits[4] = { 15.0f, 45.0f, 112.5f, 240.0f };
+        float cascadeSplits[4] = { 10.0f, 30.0f, 75.0f, 160.0f };
 
         // We will store the final shadow matrices (with bias) to send to the shader
         float shadowMatrices[4 * 16];
@@ -643,16 +643,30 @@ namespace Arc
             // Centroid in world space
             Vec3 centerWorld = m_activeCamera.position + camForward * zCenter;
 
-            // Positioning the light far enough back to catch shadow casters in front of the camera frustum
-            Vec3 lightEye = centerWorld - m_light.direction * (radius * 4.0f);
-            Vec3 lightTarget = centerWorld;
-
             // Construct UP vector for the light view matrix
             Vec3 lightUp = { 0.0f, 1.0f, 0.0f };
             if (std::abs(m_light.direction.y) > 0.99f)
             {
                 lightUp = { 0.0f, 0.0f, 1.0f };
             }
+
+            // Calculate light axes for snapping
+            Vec3 lightRight = normalize(cross(lightUp, m_light.direction));
+            Vec3 lightUpAxis = cross(m_light.direction, lightRight);
+
+            // Snap centerWorld to the shadow map texel grid to prevent flickering/shimmering
+            float texelSizeWorld = (2.0f * radius) / 4096.0f;
+            float x = dot(centerWorld, lightRight);
+            float y = dot(centerWorld, lightUpAxis);
+            float snappedX = std::floor(x / texelSizeWorld) * texelSizeWorld;
+            float snappedY = std::floor(y / texelSizeWorld) * texelSizeWorld;
+            float dx = snappedX - x;
+            float dy = snappedY - y;
+            Vec3 snappedCenterWorld = centerWorld + lightRight * dx + lightUpAxis * dy;
+
+            // Positioning the light far enough back to catch shadow casters in front of the camera frustum
+            Vec3 lightEye = snappedCenterWorld - m_light.direction * (radius * 4.0f);
+            Vec3 lightTarget = snappedCenterWorld;
 
             float lightView[16];
             bx::mtxLookAt(lightView, 

@@ -151,20 +151,54 @@ void main()
         float bias = clamp(0.0005 * (1.0 - geoNDotL), 0.0001, 0.0012);
         float compareDepth = shadowCoord.z - bias;
 
-        // 3x3 PCF filter with quadrant clamping to prevent cascade bleeding
+        // 16 Poisson Disk samples declared cross-platform using ARRAY_BEGIN/ARRAY_END
+        ARRAY_BEGIN(vec2, poissonDisk, 16)
+            vec2(-0.94201624, -0.39906216),
+            vec2(0.94558609, -0.76890725),
+            vec2(-0.094184101, -0.92938870),
+            vec2(0.34495938, 0.29387760),
+            vec2(-0.91588581, 0.45771432),
+            vec2(-0.81544232, -0.87912464),
+            vec2(-0.38208752, 0.27676845),
+            vec2(0.97484398, 0.75648379),
+            vec2(0.44323325, -0.97511554),
+            vec2(0.53742981, -0.47373420),
+            vec2(-0.26496911, -0.41893023),
+            vec2(0.79197514, 0.19090188),
+            vec2(-0.24188840, 0.99792207),
+            vec2(-0.81409955, 0.91437590),
+            vec2(0.19984126, 0.78641367),
+            vec2(0.14701631, -0.21163693)
+        ARRAY_END();
+
+        // Interleaved Gradient Noise for pseudo-random per-pixel rotation
+        vec3 ignMagic = vec3(0.06711056, 0.00583715, 52.9829189);
+        float ign = fract(ignMagic.z * fract(dot(gl_FragCoord.xy, ignMagic.xy)));
+        float angle = ign * 6.28318530718;
+        float s = sin(angle);
+        float c = cos(angle);
+
+        float texelSize = 1.0 / 8192.0;
+        float filterRadius = 3.0 * texelSize;
+        if (cascadeIndex == 1) {
+            filterRadius = 2.5 * texelSize;
+        } else if (cascadeIndex == 2) {
+            filterRadius = 2.0 * texelSize;
+        } else if (cascadeIndex == 3) {
+            filterRadius = 1.5 * texelSize;
+        }
+
         shadow = 0.0;
-        float texelSize = 1.0 / 4096.0;
         vec2 minBound = offset;
         vec2 maxBound = offset + vec2(0.5, 0.5);
-        for (float y = -1.0; y <= 1.0; y += 1.0)
+        for (int i = 0; i < 16; ++i)
         {
-            for (float x = -1.0; x <= 1.0; x += 1.0)
-            {
-                vec2 sampleCoord = clamp(shadowCoord.xy + vec2(x, y) * texelSize, minBound, maxBound);
-                shadow += shadow2D(s_shadowMap, vec3(sampleCoord, compareDepth));
-            }
+            vec2 offsetDir = poissonDisk[i];
+            vec2 rotatedOffset = vec2(offsetDir.x * c - offsetDir.y * s, offsetDir.x * s + offsetDir.y * c);
+            vec2 sampleCoord = clamp(shadowCoord.xy + rotatedOffset * filterRadius, minBound, maxBound);
+            shadow += shadow2D(s_shadowMap, vec3(sampleCoord, compareDepth));
         }
-        shadow /= 9.0;
+        shadow /= 16.0;
     }
 
     // Fade out shadows smoothly beyond the last cascade split
