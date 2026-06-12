@@ -3,7 +3,12 @@
   "name": "arc-engine-template",
   "version-string": "0.1.0",
   "dependencies": [
-    "bgfx",
+    {
+      "name": "bgfx",
+      "features": [
+        "tools"
+      ]
+    },
     "sdl2",
     "vulkan-headers",
     "vulkan-loader"

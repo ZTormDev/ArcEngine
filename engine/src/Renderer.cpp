@@ -1,0 +1,835 @@
+#include "Arc/Renderer.hpp"
+
+#include <bgfx/bgfx.h>
+#include <bx/math.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <fstream>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace Arc
+{
+    namespace
+    {
+        struct PosNormalColorVertex
+        {
+            float x;
+            float y;
+            float z;
+            float nx;
+            float ny;
+            float nz;
+            std::uint32_t abgr;
+
+            static bgfx::VertexLayout layout;
+        };
+
+        bgfx::VertexLayout PosNormalColorVertex::layout;
+
+        constexpr std::uint32_t White = 0xffffffffu;
+
+        const PosNormalColorVertex CubeVertices[] = {
+            { -1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, White },
+            {  1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, White },
+            {  1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, White },
+            { -1.0f,  1.0f,  1.0f,  0.0f,  0.0f,  1.0f, White },
+            {  1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, White },
+            { -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, -1.0f, White },
+            { -1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, White },
+            {  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, -1.0f, White },
+            { -1.0f, -1.0f, -1.0f, -1.0f,  0.0f,  0.0f, White },
+            { -1.0f, -1.0f,  1.0f, -1.0f,  0.0f,  0.0f, White },
+            { -1.0f,  1.0f,  1.0f, -1.0f,  0.0f,  0.0f, White },
+            { -1.0f,  1.0f, -1.0f, -1.0f,  0.0f,  0.0f, White },
+            {  1.0f, -1.0f,  1.0f,  1.0f,  0.0f,  0.0f, White },
+            {  1.0f, -1.0f, -1.0f,  1.0f,  0.0f,  0.0f, White },
+            {  1.0f,  1.0f, -1.0f,  1.0f,  0.0f,  0.0f, White },
+            {  1.0f,  1.0f,  1.0f,  1.0f,  0.0f,  0.0f, White },
+            { -1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, White },
+            {  1.0f,  1.0f,  1.0f,  0.0f,  1.0f,  0.0f, White },
+            {  1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, White },
+            { -1.0f,  1.0f, -1.0f,  0.0f,  1.0f,  0.0f, White },
+            { -1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, White },
+            {  1.0f, -1.0f, -1.0f,  0.0f, -1.0f,  0.0f, White },
+            {  1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, White },
+            { -1.0f, -1.0f,  1.0f,  0.0f, -1.0f,  0.0f, White },
+        };
+
+        const std::uint16_t CubeIndices[] = {
+             0,  1,  2,  0,  2,  3,
+             4,  5,  6,  4,  6,  7,
+             8,  9, 10,  8, 10, 11,
+            12, 13, 14, 12, 14, 15,
+            16, 17, 18, 16, 18, 19,
+            20, 21, 22, 20, 22, 23,
+        };
+
+        const Vec3 CubeCorners[] = {
+            { -1.0f, -1.0f, -1.0f },
+            {  1.0f, -1.0f, -1.0f },
+            {  1.0f,  1.0f, -1.0f },
+            { -1.0f,  1.0f, -1.0f },
+            { -1.0f, -1.0f,  1.0f },
+            {  1.0f, -1.0f,  1.0f },
+            {  1.0f,  1.0f,  1.0f },
+            { -1.0f,  1.0f,  1.0f },
+        };
+
+        struct ShadowPoint
+        {
+            float x;
+            float z;
+        };
+
+        [[nodiscard]] float cross2D(const ShadowPoint& origin, const ShadowPoint& a, const ShadowPoint& b)
+        {
+            return (a.x - origin.x) * (b.z - origin.z) - (a.z - origin.z) * (b.x - origin.x);
+        }
+
+        [[nodiscard]] std::vector<ShadowPoint> convexHull(std::vector<ShadowPoint> points)
+        {
+            std::sort(points.begin(), points.end(), [](const ShadowPoint& left, const ShadowPoint& right) {
+                if(left.x == right.x)
+                {
+                    return left.z < right.z;
+                }
+
+                return left.x < right.x;
+            });
+
+            points.erase(std::unique(points.begin(), points.end(), [](const ShadowPoint& left, const ShadowPoint& right) {
+                return std::abs(left.x - right.x) < 0.0001f && std::abs(left.z - right.z) < 0.0001f;
+            }), points.end());
+
+            if(points.size() <= 3)
+            {
+                return points;
+            }
+
+            std::vector<ShadowPoint> hull;
+            hull.reserve(points.size() * 2);
+
+            for(const ShadowPoint& point : points)
+            {
+                while(hull.size() >= 2 && cross2D(hull[hull.size() - 2], hull[hull.size() - 1], point) <= 0.0f)
+                {
+                    hull.pop_back();
+                }
+
+                hull.push_back(point);
+            }
+
+            const std::size_t lowerSize = hull.size();
+            for(std::size_t index = points.size() - 1; index > 0; --index)
+            {
+                const ShadowPoint& point = points[index - 1];
+                while(hull.size() > lowerSize && cross2D(hull[hull.size() - 2], hull[hull.size() - 1], point) <= 0.0f)
+                {
+                    hull.pop_back();
+                }
+
+                hull.push_back(point);
+            }
+
+            if(!hull.empty())
+            {
+                hull.pop_back();
+            }
+
+            return hull;
+        }
+
+        const PosNormalColorVertex PlaneVertices[] = {
+            { -1.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f, White },
+            {  1.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f, White },
+            {  1.0f, 0.0f,  1.0f, 0.0f, 1.0f, 0.0f, White },
+            { -1.0f, 0.0f,  1.0f, 0.0f, 1.0f, 0.0f, White },
+        };
+
+        const std::uint16_t PlaneIndices[] = {
+            0, 1, 2, 0, 2, 3,
+        };
+
+        void buildSphere(std::vector<PosNormalColorVertex>& vertices, std::vector<std::uint16_t>& indices)
+        {
+            constexpr int rings = 16;
+            constexpr int segments = 32;
+
+            vertices.reserve((rings + 1) * (segments + 1));
+            indices.reserve(rings * segments * 6);
+
+            for(int ring = 0; ring <= rings; ++ring)
+            {
+                const float v = static_cast<float>(ring) / static_cast<float>(rings);
+                const float theta = v * Pi;
+                const float y = std::cos(theta);
+                const float radius = std::sin(theta);
+
+                for(int segment = 0; segment <= segments; ++segment)
+                {
+                    const float u = static_cast<float>(segment) / static_cast<float>(segments);
+                    const float phi = u * Pi * 2.0f;
+                    const float x = std::sin(phi) * radius;
+                    const float z = std::cos(phi) * radius;
+
+                    vertices.push_back({ x, y, z, x, y, z, White });
+                }
+            }
+
+            for(int ring = 0; ring < rings; ++ring)
+            {
+                for(int segment = 0; segment < segments; ++segment)
+                {
+                    const auto current = static_cast<std::uint16_t>(ring * (segments + 1) + segment);
+                    const auto next = static_cast<std::uint16_t>(current + segments + 1);
+
+                    indices.push_back(current);
+                    indices.push_back(next);
+                    indices.push_back(static_cast<std::uint16_t>(current + 1));
+                    indices.push_back(static_cast<std::uint16_t>(current + 1));
+                    indices.push_back(next);
+                    indices.push_back(static_cast<std::uint16_t>(next + 1));
+                }
+            }
+        }
+
+        void buildDisk(std::vector<PosNormalColorVertex>& vertices, std::vector<std::uint16_t>& indices)
+        {
+            constexpr int segments = 48;
+
+            vertices.reserve(segments + 2);
+            indices.reserve(segments * 3);
+            vertices.push_back({ 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, White });
+
+            for(int segment = 0; segment <= segments; ++segment)
+            {
+                const float angle = static_cast<float>(segment) / static_cast<float>(segments) * Pi * 2.0f;
+                vertices.push_back({ std::sin(angle), 0.0f, std::cos(angle), 0.0f, 1.0f, 0.0f, White });
+            }
+
+            for(int segment = 1; segment <= segments; ++segment)
+            {
+                indices.push_back(0);
+                indices.push_back(static_cast<std::uint16_t>(segment));
+                indices.push_back(static_cast<std::uint16_t>(segment + 1));
+            }
+        }
+
+        [[nodiscard]] bool valid(bgfx::ProgramHandle handle)
+        {
+            return bgfx::isValid(handle);
+        }
+
+        [[nodiscard]] bool valid(bgfx::UniformHandle handle)
+        {
+            return bgfx::isValid(handle);
+        }
+
+        [[nodiscard]] bgfx::ShaderHandle loadShader(const std::string& path)
+        {
+            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            if(!file)
+            {
+                throw std::runtime_error("Failed to open shader: " + path);
+            }
+
+            const std::streamsize size = file.tellg();
+            file.seekg(0, std::ios::beg);
+
+            const bgfx::Memory* memory = bgfx::alloc(static_cast<std::uint32_t>(size + 1));
+            if(!file.read(reinterpret_cast<char*>(memory->data), size))
+            {
+                throw std::runtime_error("Failed to read shader: " + path);
+            }
+
+            memory->data[memory->size - 1] = '\0';
+            return bgfx::createShader(memory);
+        }
+
+        [[nodiscard]] bgfx::ProgramHandle loadProgram(const std::string& vertexPath, const std::string& fragmentPath)
+        {
+            bgfx::ShaderHandle vertexShader = loadShader(vertexPath);
+            bgfx::ShaderHandle fragmentShader = loadShader(fragmentPath);
+            return bgfx::createProgram(vertexShader, fragmentShader, true);
+        }
+    }
+
+    struct Renderer::Handles
+    {
+        bgfx::VertexBufferHandle cubeVertexBuffer = BGFX_INVALID_HANDLE;
+        bgfx::IndexBufferHandle cubeIndexBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexBufferHandle planeVertexBuffer = BGFX_INVALID_HANDLE;
+        bgfx::IndexBufferHandle planeIndexBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexBufferHandle sphereVertexBuffer = BGFX_INVALID_HANDLE;
+        bgfx::IndexBufferHandle sphereIndexBuffer = BGFX_INVALID_HANDLE;
+        bgfx::VertexBufferHandle diskVertexBuffer = BGFX_INVALID_HANDLE;
+        bgfx::IndexBufferHandle diskIndexBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle meshProgram = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle skyProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle lightDirection = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle lightColor = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cameraData = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle ambientColor = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle tint = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle material = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle skyHorizon = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle skyZenith = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle skySunGlow = BGFX_INVALID_HANDLE;
+    };
+
+    Renderer::~Renderer()
+    {
+        shutdown();
+    }
+
+    void Renderer::initialize(const RendererConfig& config)
+    {
+        m_width = config.width;
+        m_height = config.height;
+        m_shaderDirectory = config.shaderDirectory;
+        m_handles = new Handles();
+
+        PosNormalColorVertex::layout
+            .begin()
+            .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+            .end();
+
+        createGeometry();
+        createPrograms();
+
+        bgfx::setDebug(BGFX_DEBUG_TEXT);
+        resize(m_width, m_height);
+        m_initialized = true;
+    }
+
+    void Renderer::shutdown()
+    {
+        if(!m_initialized && m_handles == nullptr)
+        {
+            return;
+        }
+
+        destroyPrograms();
+        destroyGeometry();
+
+        delete m_handles;
+        m_handles = nullptr;
+        m_initialized = false;
+    }
+
+    void Renderer::resize(std::uint32_t width, std::uint32_t height)
+    {
+        m_width = width > 0 ? width : 1;
+        m_height = height > 0 ? height : 1;
+
+        bgfx::setViewRect(0, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewRect(1, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x101820ff, 1.0f, 0);
+    }
+
+    void Renderer::beginFrame()
+    {
+        m_stats = {};
+        bgfx::dbgTextClear();
+        bgfx::touch(0);
+        bgfx::touch(1);
+        m_sceneActive = false;
+    }
+
+    void Renderer::setFrameStats(float deltaSeconds)
+    {
+        m_frameTimeAccumulator += deltaSeconds;
+        ++m_frameCounter;
+
+        if(m_frameTimeAccumulator >= 0.25f)
+        {
+            m_fps = static_cast<float>(m_frameCounter) / m_frameTimeAccumulator;
+            m_frameTimeAccumulator = 0.0f;
+            m_frameCounter = 0;
+        }
+    }
+
+    void Renderer::beginScene(const Camera& camera)
+    {
+        m_activeCamera = camera;
+
+        const Vec3 forward = camera.forward();
+        const Vec3 target = camera.position + forward;
+        const bx::Vec3 eye{ camera.position.x, camera.position.y, camera.position.z };
+        const bx::Vec3 at{ target.x, target.y, target.z };
+        const bx::Vec3 up{ 0.0f, 1.0f, 0.0f };
+
+        float view[16];
+        float projection[16];
+        bx::mtxLookAt(view, eye, at, up, bx::Handedness::Right);
+        bx::mtxProj(
+            projection,
+            camera.verticalFovDegrees,
+            static_cast<float>(m_width) / static_cast<float>(m_height),
+            camera.nearPlane,
+            camera.farPlane,
+            bgfx::getCaps()->homogeneousDepth,
+            bx::Handedness::Right);
+
+        bgfx::setViewTransform(0, view, projection);
+        bgfx::setViewTransform(1, view, projection);
+        m_sceneActive = true;
+    }
+
+    void Renderer::setDirectionalLight(const DirectionalLight& light)
+    {
+        m_light = light;
+        m_light.direction = normalize(m_light.direction);
+        m_light.intensity = std::max(m_light.intensity, 0.0f);
+    }
+
+    void Renderer::drawSkybox(const Skybox& skybox)
+    {
+        if(!m_sceneActive)
+        {
+            return;
+        }
+
+        const Transform transform{
+            m_activeCamera.position,
+            {},
+            { m_activeCamera.farPlane * 0.4f, m_activeCamera.farPlane * 0.4f, m_activeCamera.farPlane * 0.4f }
+        };
+
+        setObjectTransform(transform);
+
+        const float horizon[] = { skybox.horizon.r, skybox.horizon.g, skybox.horizon.b, skybox.horizon.a };
+        const float zenith[] = { skybox.zenith.r, skybox.zenith.g, skybox.zenith.b, skybox.zenith.a };
+        const float glow[] = { skybox.sunGlow.r, skybox.sunGlow.g, skybox.sunGlow.b, skybox.sunGlow.a };
+        const float lightDirection[] = { m_light.direction.x, m_light.direction.y, m_light.direction.z, 0.0f };
+
+        bgfx::setUniform(m_handles->skyHorizon, horizon);
+        bgfx::setUniform(m_handles->skyZenith, zenith);
+        bgfx::setUniform(m_handles->skySunGlow, glow);
+        bgfx::setUniform(m_handles->lightDirection, lightDirection);
+        bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
+        bgfx::setIndexBuffer(m_handles->cubeIndexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_DEPTH_TEST_ALWAYS);
+        bgfx::submit(0, m_handles->skyProgram);
+        ++m_stats.drawCalls;
+    }
+
+    void Renderer::drawGround(float size, const Material& material)
+    {
+        if(!m_sceneActive)
+        {
+            return;
+        }
+
+        const Transform transform{ { 0.0f, 0.0f, 0.0f }, {}, { size, 1.0f, size } };
+        setObjectTransform(transform);
+
+        setPbrUniforms(material);
+        bgfx::setVertexBuffer(0, m_handles->planeVertexBuffer);
+        bgfx::setIndexBuffer(m_handles->planeIndexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(1, m_handles->meshProgram);
+        ++m_stats.drawCalls;
+        ++m_stats.meshDraws;
+    }
+
+    void Renderer::drawBlobShadow(const Transform& casterTransform, float groundY, float opacity)
+    {
+        if(!m_sceneActive || std::abs(m_light.direction.y) <= 0.0001f)
+        {
+            return;
+        }
+
+        std::vector<ShadowPoint> projectedPoints;
+        projectedPoints.reserve(std::size(CubeCorners));
+
+        float model[16];
+        bx::mtxSRT(
+            model,
+            casterTransform.scale.x,
+            casterTransform.scale.y,
+            casterTransform.scale.z,
+            casterTransform.rotation.x,
+            casterTransform.rotation.y,
+            casterTransform.rotation.z,
+            casterTransform.position.x,
+            casterTransform.position.y,
+            casterTransform.position.z);
+
+        for(const Vec3& corner : CubeCorners)
+        {
+            const float local[] = { corner.x, corner.y, corner.z, 1.0f };
+            float world[4];
+            bx::vec4MulMtx(world, local, model);
+
+            const float distanceToGround = (groundY - world[1]) / m_light.direction.y;
+            const Vec3 projected{
+                world[0] + m_light.direction.x * distanceToGround,
+                groundY,
+                world[2] + m_light.direction.z * distanceToGround
+            };
+
+            projectedPoints.push_back({ projected.x, projected.z });
+        }
+
+        const std::vector<ShadowPoint> hull = convexHull(std::move(projectedPoints));
+        if(hull.size() < 3)
+        {
+            return;
+        }
+
+        bgfx::TransientVertexBuffer shadowVertices;
+        bgfx::TransientIndexBuffer shadowIndices;
+        const std::uint32_t vertexCount = static_cast<std::uint32_t>(hull.size());
+        const std::uint32_t indexCount = static_cast<std::uint32_t>((hull.size() - 2) * 3);
+
+        if(bgfx::getAvailTransientVertexBuffer(vertexCount, PosNormalColorVertex::layout) < vertexCount ||
+            bgfx::getAvailTransientIndexBuffer(indexCount) < indexCount)
+        {
+            return;
+        }
+
+        bgfx::allocTransientVertexBuffer(&shadowVertices, vertexCount, PosNormalColorVertex::layout);
+        bgfx::allocTransientIndexBuffer(&shadowIndices, indexCount);
+
+        auto* vertices = reinterpret_cast<PosNormalColorVertex*>(shadowVertices.data);
+        for(std::size_t index = 0; index < hull.size(); ++index)
+        {
+            vertices[index] = { hull[index].x, groundY + 0.02f, hull[index].z, 0.0f, 1.0f, 0.0f, White };
+        }
+
+        auto* indices = reinterpret_cast<std::uint16_t*>(shadowIndices.data);
+        std::size_t writeIndex = 0;
+        for(std::uint16_t index = 1; index + 1 < hull.size(); ++index)
+        {
+            indices[writeIndex++] = 0;
+            indices[writeIndex++] = index;
+            indices[writeIndex++] = static_cast<std::uint16_t>(index + 1);
+        }
+
+        float identity[16];
+        bx::mtxIdentity(identity);
+        bgfx::setTransform(identity);
+
+        const float alpha = clamp(opacity, 0.0f, 1.0f);
+        setPbrUniforms({ { 0.02f, 0.025f, 0.03f, alpha }, 0.0f, 1.0f, 0.0f });
+        bgfx::setVertexBuffer(0, &shadowVertices);
+        bgfx::setIndexBuffer(&shadowIndices);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_BLEND_ALPHA | BGFX_STATE_DEPTH_TEST_LEQUAL);
+        bgfx::submit(1, m_handles->meshProgram);
+        ++m_stats.drawCalls;
+        ++m_stats.shadowDraws;
+    }
+
+    void Renderer::drawCube(const Transform& transform, const Material& material)
+    {
+        if(!m_sceneActive)
+        {
+            return;
+        }
+
+        setObjectTransform(transform);
+
+        setPbrUniforms(material);
+        bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
+        bgfx::setIndexBuffer(m_handles->cubeIndexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(1, m_handles->meshProgram);
+        ++m_stats.drawCalls;
+        ++m_stats.meshDraws;
+    }
+
+    void Renderer::drawSphere(const Transform& transform, const Material& material)
+    {
+        if(!m_sceneActive)
+        {
+            return;
+        }
+
+        setObjectTransform(transform);
+        setPbrUniforms(material);
+        bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
+        bgfx::setIndexBuffer(m_handles->sphereIndexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(1, m_handles->meshProgram);
+        ++m_stats.drawCalls;
+        ++m_stats.meshDraws;
+    }
+
+    void Renderer::drawSun(const DirectionalLight& light, float distance, float size)
+    {
+        const Vec3 sunPosition = m_activeCamera.position + normalize(light.direction) * -distance;
+        const Transform transform{ sunPosition, {}, { size, size, size } };
+
+        setObjectTransform(transform);
+
+        setPbrUniforms({ light.color, 0.0f, 0.18f, 7.5f });
+        bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
+        bgfx::setIndexBuffer(m_handles->sphereIndexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(1, m_handles->meshProgram);
+        ++m_stats.drawCalls;
+        ++m_stats.meshDraws;
+    }
+
+    void Renderer::endFrame()
+    {
+        bgfx::dbgTextPrintf(1, 1, 0x4f, "Arc Engine");
+        bgfx::dbgTextPrintf(1, 2, 0x0f, "Renderer: %s", bgfx::getRendererName(bgfx::getRendererType()));
+        bgfx::dbgTextPrintf(1, 3, 0x0f, "FPS: %.1f", m_fps);
+        bgfx::dbgTextPrintf(1, 4, 0x0f, "Draw calls: %u | Meshes: %u | Shadows: %u", m_stats.drawCalls, m_stats.meshDraws, m_stats.shadowDraws);
+        bgfx::dbgTextPrintf(1, 5, 0x0f, "Move: WASD/QE | Look: hold RMB | Fast: Shift | Quit: Esc");
+        bgfx::frame();
+    }
+
+    std::uint32_t Renderer::width() const
+    {
+        return m_width;
+    }
+
+    std::uint32_t Renderer::height() const
+    {
+        return m_height;
+    }
+
+    const RenderStats& Renderer::stats() const
+    {
+        return m_stats;
+    }
+
+    void Renderer::createGeometry()
+    {
+        m_handles->cubeVertexBuffer = bgfx::createVertexBuffer(bgfx::makeRef(CubeVertices, sizeof(CubeVertices)), PosNormalColorVertex::layout);
+        m_handles->cubeIndexBuffer = bgfx::createIndexBuffer(bgfx::makeRef(CubeIndices, sizeof(CubeIndices)));
+        m_handles->planeVertexBuffer = bgfx::createVertexBuffer(bgfx::makeRef(PlaneVertices, sizeof(PlaneVertices)), PosNormalColorVertex::layout);
+        m_handles->planeIndexBuffer = bgfx::createIndexBuffer(bgfx::makeRef(PlaneIndices, sizeof(PlaneIndices)));
+
+        std::vector<PosNormalColorVertex> sphereVertices;
+        std::vector<std::uint16_t> sphereIndices;
+        buildSphere(sphereVertices, sphereIndices);
+        m_handles->sphereVertexBuffer = bgfx::createVertexBuffer(
+            bgfx::copy(sphereVertices.data(), static_cast<std::uint32_t>(sphereVertices.size() * sizeof(PosNormalColorVertex))),
+            PosNormalColorVertex::layout);
+        m_handles->sphereIndexBuffer = bgfx::createIndexBuffer(
+            bgfx::copy(sphereIndices.data(), static_cast<std::uint32_t>(sphereIndices.size() * sizeof(std::uint16_t))));
+
+        std::vector<PosNormalColorVertex> diskVertices;
+        std::vector<std::uint16_t> diskIndices;
+        buildDisk(diskVertices, diskIndices);
+        m_handles->diskVertexBuffer = bgfx::createVertexBuffer(
+            bgfx::copy(diskVertices.data(), static_cast<std::uint32_t>(diskVertices.size() * sizeof(PosNormalColorVertex))),
+            PosNormalColorVertex::layout);
+        m_handles->diskIndexBuffer = bgfx::createIndexBuffer(
+            bgfx::copy(diskIndices.data(), static_cast<std::uint32_t>(diskIndices.size() * sizeof(std::uint16_t))));
+    }
+
+    void Renderer::createPrograms()
+    {
+        m_handles->meshProgram = loadProgram(shaderPath("vs_mesh.sc.bin"), shaderPath("fs_mesh.sc.bin"));
+        m_handles->skyProgram = loadProgram(shaderPath("vs_sky.sc.bin"), shaderPath("fs_sky.sc.bin"));
+
+        if(!valid(m_handles->meshProgram) || !valid(m_handles->skyProgram))
+        {
+            throw std::runtime_error("Failed to create BGFX shader programs.");
+        }
+
+        m_handles->lightDirection = bgfx::createUniform("u_lightDirection", bgfx::UniformType::Vec4);
+        m_handles->lightColor = bgfx::createUniform("u_lightColor", bgfx::UniformType::Vec4);
+        m_handles->cameraData = bgfx::createUniform("u_cameraData", bgfx::UniformType::Vec4);
+        m_handles->ambientColor = bgfx::createUniform("u_ambientColor", bgfx::UniformType::Vec4);
+        m_handles->tint = bgfx::createUniform("u_tint", bgfx::UniformType::Vec4);
+        m_handles->material = bgfx::createUniform("u_material", bgfx::UniformType::Vec4);
+        m_handles->skyHorizon = bgfx::createUniform("u_skyHorizon", bgfx::UniformType::Vec4);
+        m_handles->skyZenith = bgfx::createUniform("u_skyZenith", bgfx::UniformType::Vec4);
+        m_handles->skySunGlow = bgfx::createUniform("u_skySunGlow", bgfx::UniformType::Vec4);
+    }
+
+    void Renderer::destroyGeometry()
+    {
+        if(m_handles == nullptr)
+        {
+            return;
+        }
+
+        if(bgfx::isValid(m_handles->diskIndexBuffer))
+        {
+            bgfx::destroy(m_handles->diskIndexBuffer);
+            m_handles->diskIndexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        if(bgfx::isValid(m_handles->diskVertexBuffer))
+        {
+            bgfx::destroy(m_handles->diskVertexBuffer);
+            m_handles->diskVertexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        if(bgfx::isValid(m_handles->sphereIndexBuffer))
+        {
+            bgfx::destroy(m_handles->sphereIndexBuffer);
+            m_handles->sphereIndexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        if(bgfx::isValid(m_handles->sphereVertexBuffer))
+        {
+            bgfx::destroy(m_handles->sphereVertexBuffer);
+            m_handles->sphereVertexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        if(bgfx::isValid(m_handles->planeIndexBuffer))
+        {
+            bgfx::destroy(m_handles->planeIndexBuffer);
+            m_handles->planeIndexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        if(bgfx::isValid(m_handles->planeVertexBuffer))
+        {
+            bgfx::destroy(m_handles->planeVertexBuffer);
+            m_handles->planeVertexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        if(bgfx::isValid(m_handles->cubeIndexBuffer))
+        {
+            bgfx::destroy(m_handles->cubeIndexBuffer);
+            m_handles->cubeIndexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        if(bgfx::isValid(m_handles->cubeVertexBuffer))
+        {
+            bgfx::destroy(m_handles->cubeVertexBuffer);
+            m_handles->cubeVertexBuffer = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    void Renderer::destroyPrograms()
+    {
+        if(m_handles == nullptr)
+        {
+            return;
+        }
+
+        if(valid(m_handles->skySunGlow))
+        {
+            bgfx::destroy(m_handles->skySunGlow);
+            m_handles->skySunGlow = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->skyZenith))
+        {
+            bgfx::destroy(m_handles->skyZenith);
+            m_handles->skyZenith = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->skyHorizon))
+        {
+            bgfx::destroy(m_handles->skyHorizon);
+            m_handles->skyHorizon = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->material))
+        {
+            bgfx::destroy(m_handles->material);
+            m_handles->material = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->tint))
+        {
+            bgfx::destroy(m_handles->tint);
+            m_handles->tint = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->ambientColor))
+        {
+            bgfx::destroy(m_handles->ambientColor);
+            m_handles->ambientColor = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->cameraData))
+        {
+            bgfx::destroy(m_handles->cameraData);
+            m_handles->cameraData = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->lightColor))
+        {
+            bgfx::destroy(m_handles->lightColor);
+            m_handles->lightColor = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->lightDirection))
+        {
+            bgfx::destroy(m_handles->lightDirection);
+            m_handles->lightDirection = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->skyProgram))
+        {
+            bgfx::destroy(m_handles->skyProgram);
+            m_handles->skyProgram = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->meshProgram))
+        {
+            bgfx::destroy(m_handles->meshProgram);
+            m_handles->meshProgram = BGFX_INVALID_HANDLE;
+        }
+    }
+
+    void Renderer::setObjectTransform(const Transform& transform)
+    {
+        float matrix[16];
+        bx::mtxSRT(
+            matrix,
+            transform.scale.x,
+            transform.scale.y,
+            transform.scale.z,
+            transform.rotation.x,
+            transform.rotation.y,
+            transform.rotation.z,
+            transform.position.x,
+            transform.position.y,
+            transform.position.z);
+        bgfx::setTransform(matrix);
+    }
+
+    void Renderer::setPbrUniforms(const Material& material)
+    {
+        const float tint[] = { material.baseColor.r, material.baseColor.g, material.baseColor.b, material.baseColor.a };
+        const float materialData[] = { material.metallic, material.roughness, material.emissive, 0.0f };
+        const float lightDirection[] = { m_light.direction.x, m_light.direction.y, m_light.direction.z, 0.0f };
+        const float lightColor[] = { m_light.color.r, m_light.color.g, m_light.color.b, m_light.intensity };
+        const float cameraData[] = { m_activeCamera.position.x, m_activeCamera.position.y, m_activeCamera.position.z, 1.15f };
+        const float ambientColor[] = { 0.34f, 0.39f, 0.46f, 0.38f };
+
+        bgfx::setUniform(m_handles->tint, tint);
+        bgfx::setUniform(m_handles->material, materialData);
+        bgfx::setUniform(m_handles->lightDirection, lightDirection);
+        bgfx::setUniform(m_handles->lightColor, lightColor);
+        bgfx::setUniform(m_handles->cameraData, cameraData);
+        bgfx::setUniform(m_handles->ambientColor, ambientColor);
+    }
+
+    std::string Renderer::shaderPath(const char* shaderName) const
+    {
+        const bgfx::RendererType::Enum rendererType = bgfx::getRendererType();
+        const char* profile = "spirv";
+
+        if(rendererType == bgfx::RendererType::Direct3D11 || rendererType == bgfx::RendererType::Direct3D12)
+        {
+            profile = "dx11";
+        }
+        else if(rendererType == bgfx::RendererType::OpenGL)
+        {
+            profile = "glsl";
+        }
+
+        return m_shaderDirectory + "/" + profile + "/" + shaderName;
+    }
+}

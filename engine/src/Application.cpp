@@ -1,5 +1,8 @@
 #include "Arc/Application.hpp"
 
+#include "Arc/Input.hpp"
+#include "Arc/Renderer.hpp"
+
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
 #include <SDL.h>
@@ -7,6 +10,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -18,6 +22,19 @@ namespace Arc
         std::string sdlError(const char* message)
         {
             return std::string(message) + ": " + SDL_GetError();
+        }
+
+        std::string defaultShaderDirectory()
+        {
+            char* basePath = SDL_GetBasePath();
+            if(basePath == nullptr)
+            {
+                return "shaders";
+            }
+
+            std::string shaderDirectory = std::string(basePath) + "shaders";
+            SDL_free(basePath);
+            return shaderDirectory;
         }
     }
 
@@ -40,6 +57,7 @@ namespace Arc
 
             while(m_running)
             {
+                m_input->beginFrame();
                 processEvents();
 
                 const std::uint64_t currentCounter = SDL_GetPerformanceCounter();
@@ -48,7 +66,10 @@ namespace Arc
                 m_lastCounter = currentCounter;
 
                 onUpdate(deltaSeconds);
-                render();
+                m_renderer->beginFrame();
+                m_renderer->setFrameStats(deltaSeconds);
+                onRender(*m_renderer);
+                m_renderer->endFrame();
             }
 
             onShutdown();
@@ -70,6 +91,17 @@ namespace Arc
     void Application::onUpdate(float deltaSeconds)
     {
         (void)deltaSeconds;
+    }
+
+    void Application::onRender(Renderer& renderer)
+    {
+        (void)renderer;
+    }
+
+    void Application::onResize(std::uint32_t width, std::uint32_t height)
+    {
+        (void)width;
+        (void)height;
     }
 
     void Application::onShutdown()
@@ -132,10 +164,13 @@ namespace Arc
         }
 
         m_bgfxInitialized = true;
-
-        bgfx::setDebug(BGFX_DEBUG_TEXT);
-        bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x101820ff, 1.0f, 0);
-        bgfx::setViewRect(0, 0, 0, static_cast<std::uint16_t>(m_config.width), static_cast<std::uint16_t>(m_config.height));
+        m_input = new Input();
+        m_renderer = new Renderer();
+        m_renderer->initialize({
+            m_config.width,
+            m_config.height,
+            m_config.shaderDirectory.empty() ? defaultShaderDirectory() : m_config.shaderDirectory
+        });
 
         m_running = true;
         m_lastCounter = SDL_GetPerformanceCounter();
@@ -157,29 +192,61 @@ namespace Arc
                 m_running = false;
             }
 
+            if(event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)
+            {
+                mapKey(event.key.keysym.scancode, event.type == SDL_KEYDOWN);
+            }
+
+            if(event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP)
+            {
+                const bool pressed = event.type == SDL_MOUSEBUTTONDOWN;
+
+                if(event.button.button == SDL_BUTTON_LEFT)
+                {
+                    m_input->setMouseButton(MouseButton::Left, pressed);
+                }
+                else if(event.button.button == SDL_BUTTON_RIGHT)
+                {
+                    m_input->setMouseButton(MouseButton::Right, pressed);
+                }
+                else if(event.button.button == SDL_BUTTON_MIDDLE)
+                {
+                    m_input->setMouseButton(MouseButton::Middle, pressed);
+                }
+            }
+
+            if(event.type == SDL_MOUSEMOTION)
+            {
+                m_input->addMouseMotion(event.motion.xrel, event.motion.yrel);
+            }
+
             if(event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED)
             {
                 const auto width = static_cast<std::uint32_t>(std::max(event.window.data1, 1));
                 const auto height = static_cast<std::uint32_t>(std::max(event.window.data2, 1));
 
                 bgfx::reset(width, height, BGFX_RESET_VSYNC);
-                bgfx::setViewRect(0, 0, 0, static_cast<std::uint16_t>(width), static_cast<std::uint16_t>(height));
+                m_renderer->resize(width, height);
+                onResize(width, height);
             }
         }
     }
 
-    void Application::render()
-    {
-        bgfx::touch(0);
-        bgfx::dbgTextClear();
-        bgfx::dbgTextPrintf(1, 1, 0x4f, "Arc Engine");
-        bgfx::dbgTextPrintf(1, 2, 0x0f, "Renderer: %s", bgfx::getRendererName(bgfx::getRendererType()));
-        bgfx::dbgTextPrintf(1, 3, 0x0f, "Press Esc to quit.");
-        bgfx::frame();
-    }
-
     void Application::shutdown()
     {
+        if(m_renderer != nullptr)
+        {
+            m_renderer->shutdown();
+            delete m_renderer;
+            m_renderer = nullptr;
+        }
+
+        if(m_input != nullptr)
+        {
+            delete m_input;
+            m_input = nullptr;
+        }
+
         if(m_bgfxInitialized)
         {
             bgfx::shutdown();
@@ -199,5 +266,85 @@ namespace Arc
         }
 
         m_running = false;
+    }
+
+    Input& Application::input()
+    {
+        return *m_input;
+    }
+
+    const Input& Application::input() const
+    {
+        return *m_input;
+    }
+
+    Renderer& Application::renderer()
+    {
+        return *m_renderer;
+    }
+
+    const Renderer& Application::renderer() const
+    {
+        return *m_renderer;
+    }
+
+    std::uint32_t Application::width() const
+    {
+        return m_renderer != nullptr ? m_renderer->width() : m_config.width;
+    }
+
+    std::uint32_t Application::height() const
+    {
+        return m_renderer != nullptr ? m_renderer->height() : m_config.height;
+    }
+
+    void Application::quit()
+    {
+        m_running = false;
+    }
+
+    void Application::setMouseCaptured(bool captured)
+    {
+        if(m_mouseCaptured == captured)
+        {
+            return;
+        }
+
+        SDL_SetRelativeMouseMode(captured ? SDL_TRUE : SDL_FALSE);
+        m_mouseCaptured = captured;
+    }
+
+    void Application::mapKey(int scancode, bool pressed)
+    {
+        switch(scancode)
+        {
+        case SDL_SCANCODE_W:
+            m_input->setKey(Key::W, pressed);
+            break;
+        case SDL_SCANCODE_A:
+            m_input->setKey(Key::A, pressed);
+            break;
+        case SDL_SCANCODE_S:
+            m_input->setKey(Key::S, pressed);
+            break;
+        case SDL_SCANCODE_D:
+            m_input->setKey(Key::D, pressed);
+            break;
+        case SDL_SCANCODE_Q:
+            m_input->setKey(Key::Q, pressed);
+            break;
+        case SDL_SCANCODE_E:
+            m_input->setKey(Key::E, pressed);
+            break;
+        case SDL_SCANCODE_LSHIFT:
+        case SDL_SCANCODE_RSHIFT:
+            m_input->setKey(Key::LeftShift, pressed);
+            break;
+        case SDL_SCANCODE_ESCAPE:
+            m_input->setKey(Key::Escape, pressed);
+            break;
+        default:
+            break;
+        }
     }
 }

@@ -4,8 +4,17 @@ find_package(Vulkan REQUIRED)
 
 add_library(ArcEngine STATIC
     include/Arc/Application.hpp
+    include/Arc/Camera.hpp
     include/Arc/Engine.hpp
+    include/Arc/Input.hpp
+    include/Arc/Math.hpp
+    include/Arc/Renderer.hpp
+    include/Arc/Scene.hpp
     src/Application.cpp
+    src/Camera.cpp
+    src/Input.cpp
+    src/Renderer.cpp
+    src/Scene.cpp
 )
 
 add_library(Arc::Engine ALIAS ArcEngine)
@@ -28,9 +37,42 @@ target_compile_definitions(ArcEngine
 target_link_libraries(ArcEngine
     PRIVATE
         SDL2::SDL2
+        bgfx::bx
         bgfx::bgfx
         Vulkan::Vulkan
 )
+
+set(ARC_SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+set(ARC_SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/generated/shaders")
+
+if(COMMAND bgfx_compile_shaders)
+    bgfx_compile_shaders(
+        TYPE VERTEX
+        SHADERS
+            "${ARC_SHADER_SOURCE_DIR}/vs_mesh.sc"
+            "${ARC_SHADER_SOURCE_DIR}/vs_sky.sc"
+        VARYING_DEF "${ARC_SHADER_SOURCE_DIR}/varying.def.sc"
+        OUTPUT_DIR "${ARC_SHADER_OUTPUT_DIR}"
+        OUT_FILES_VAR ARC_VERTEX_SHADER_OUTPUTS
+        INCLUDE_DIRS "${ARC_SHADER_SOURCE_DIR}"
+    )
+
+    bgfx_compile_shaders(
+        TYPE FRAGMENT
+        SHADERS
+            "${ARC_SHADER_SOURCE_DIR}/fs_mesh.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_sky.sc"
+        VARYING_DEF "${ARC_SHADER_SOURCE_DIR}/varying.def.sc"
+        OUTPUT_DIR "${ARC_SHADER_OUTPUT_DIR}"
+        OUT_FILES_VAR ARC_FRAGMENT_SHADER_OUTPUTS
+        INCLUDE_DIRS "${ARC_SHADER_SOURCE_DIR}"
+    )
+
+    add_custom_target(ArcShaders DEPENDS ${ARC_VERTEX_SHADER_OUTPUTS} ${ARC_FRAGMENT_SHADER_OUTPUTS})
+    add_dependencies(ArcEngine ArcShaders)
+else()
+    message(FATAL_ERROR "BGFX shader tools are required. vcpkg.json enables bgfx[tools]; re-run CMake configure.")
+endif()
 
 if(MSVC)
     target_compile_options(ArcEngine PRIVATE /W4 /permissive- /EHsc)
