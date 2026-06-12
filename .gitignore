@@ -1,0 +1,13 @@
+.vs/
+build/
+out/
+vcpkg_installed/
+CMakeUserPresets.json
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.pdb
+*.ilk
+*.obj
+*.log
