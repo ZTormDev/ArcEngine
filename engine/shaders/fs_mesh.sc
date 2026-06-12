@@ -110,36 +110,64 @@ void main()
         shadowMtx = u_shadowMtx[3];
     }
 
-    vec4 shadowProj = mul(shadowMtx, vec4(v_worldPosition, 1.0));
+    float biasScale = 1.0;
+    if (cascadeIndex == 1) {
+        biasScale = 3.0;
+    } else if (cascadeIndex == 2) {
+        biasScale = 7.5;
+    } else if (cascadeIndex == 3) {
+        biasScale = 16.0;
+    }
+
+    float geoNDotL = max(dot(vertexNormal, lightDirection), 0.0);
+
+    // Apply dynamic normal offset bias scaled by the cascade's world-space texel size and geometric slope
+    float normalOffsetFactor = clamp(0.05 * (1.0 - geoNDotL), 0.01, 0.06);
+    float normalOffset = normalOffsetFactor * biasScale;
+    vec3 biasedWorldPos = v_worldPosition + vertexNormal * normalOffset;
+
+    vec4 shadowProj = mul(shadowMtx, vec4(biasedWorldPos, 1.0));
     vec3 shadowCoord = shadowProj.xyz / shadowProj.w;
 
-    vec2 offset = vec2(0.0, 0.0);
-    if (cascadeIndex == 1) {
-        offset = vec2(0.5, 0.0);
-    } else if (cascadeIndex == 2) {
-        offset = vec2(0.0, 0.5);
-    } else if (cascadeIndex == 3) {
-        offset = vec2(0.5, 0.5);
-    }
-    shadowCoord.xy = shadowCoord.xy * 0.5 + offset;
+    // Check if the coordinate is inside the current cascade's projection box bounds
+    bool inside = shadowCoord.x >= 0.0 && shadowCoord.x <= 1.0 &&
+                  shadowCoord.y >= 0.0 && shadowCoord.y <= 1.0 &&
+                  shadowCoord.z >= 0.0 && shadowCoord.z <= 1.0;
 
-    // Slope-scaled depth bias to prevent shadow acne
-    float bias = max(0.0015 * (1.0 - nDotL), 0.0003);
-    float compareDepth = shadowCoord.z - bias;
-
-    // 3x3 PCF filter
-    float shadow = 0.0;
-    float texelSize = 1.0 / 2048.0;
-    for (float y = -1.0; y <= 1.0; y += 1.0)
+    float shadow = 1.0;
+    if (inside)
     {
-        for (float x = -1.0; x <= 1.0; x += 1.0)
-        {
-            shadow += shadow2D(s_shadowMap, vec3(shadowCoord.xy + vec2(x, y) * texelSize, compareDepth));
+        vec2 offset = vec2(0.0, 0.0);
+        if (cascadeIndex == 1) {
+            offset = vec2(0.5, 0.0);
+        } else if (cascadeIndex == 2) {
+            offset = vec2(0.0, 0.5);
+        } else if (cascadeIndex == 3) {
+            offset = vec2(0.5, 0.5);
         }
-    }
-    shadow /= 9.0;
+        shadowCoord.xy = shadowCoord.xy * 0.5 + offset;
 
-    // Fade out shadows beyond the last cascade split
+        // Use a dynamic slope-scaled depth bias based on geometric normal to prevent acne at grazing angles
+        float bias = clamp(0.0005 * (1.0 - geoNDotL), 0.0001, 0.0012);
+        float compareDepth = shadowCoord.z - bias;
+
+        // 3x3 PCF filter with quadrant clamping to prevent cascade bleeding
+        shadow = 0.0;
+        float texelSize = 1.0 / 4096.0;
+        vec2 minBound = offset;
+        vec2 maxBound = offset + vec2(0.5, 0.5);
+        for (float y = -1.0; y <= 1.0; y += 1.0)
+        {
+            for (float x = -1.0; x <= 1.0; x += 1.0)
+            {
+                vec2 sampleCoord = clamp(shadowCoord.xy + vec2(x, y) * texelSize, minBound, maxBound);
+                shadow += shadow2D(s_shadowMap, vec3(sampleCoord, compareDepth));
+            }
+        }
+        shadow /= 9.0;
+    }
+
+    // Fade out shadows smoothly beyond the last cascade split
     if (depth > u_cascadeSplits.w)
     {
         float fade = saturate((depth - u_cascadeSplits.w) / 10.0);

@@ -287,14 +287,14 @@ namespace Arc
         createDefaultTextures();
         createPrograms();
 
-        // Create 2048x2048 shadow depth texture and framebuffer
-        std::uint64_t shadowTextureFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LESS;
+        // Create 4096x4096 shadow depth texture and framebuffer
+        std::uint64_t shadowTextureFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LEQUAL;
         m_handles->shadowTexture = bgfx::createTexture2D(
-            2048,
-            2048,
+            4096,
+            4096,
             false,
             1,
-            bgfx::TextureFormat::D16,
+            bgfx::TextureFormat::D32F,
             shadowTextureFlags
         );
 
@@ -334,20 +334,20 @@ namespace Arc
         m_width = width > 0 ? width : 1;
         m_height = height > 0 ? height : 1;
 
-        // Configure the 4 shadow cascade views in a 2x2 grid in the 2048x2048 framebuffer
+        // Configure the 4 shadow cascade views in a 2x2 grid in the 4096x4096 framebuffer
         for (bgfx::ViewId i = 0; i < 4; ++i)
         {
             bgfx::setViewFrameBuffer(i, m_handles->shadowFrameBuffer);
-            std::uint16_t x = (i % 2) * 1024;
-            std::uint16_t y = (i / 2) * 1024;
-            bgfx::setViewRect(i, x, y, 1024, 1024);
+            std::uint16_t x = (i % 2) * 2048;
+            std::uint16_t y = (i / 2) * 2048;
+            bgfx::setViewRect(i, x, y, 2048, 2048);
         }
 
-        // Configure clears: only View 0 clears the depth buffer of the shadow map
+        // Configure clears: clear the depth buffer for all shadow cascade quadrants
         bgfx::setViewClear(ViewIdShadow0, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
-        bgfx::setViewClear(ViewIdShadow1, BGFX_CLEAR_NONE, 0, 1.0f, 0);
-        bgfx::setViewClear(ViewIdShadow2, BGFX_CLEAR_NONE, 0, 1.0f, 0);
-        bgfx::setViewClear(ViewIdShadow3, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+        bgfx::setViewClear(ViewIdShadow1, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
+        bgfx::setViewClear(ViewIdShadow2, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
+        bgfx::setViewClear(ViewIdShadow3, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
 
         // Configure skybox and scene views (Views 4 and 5) to draw on the backbuffer (full screen)
         bgfx::setViewFrameBuffer(ViewIdSkybox, BGFX_INVALID_HANDLE);
@@ -604,7 +604,7 @@ namespace Arc
         float tanHalfFovy = std::tan(fovRad * 0.5f);
         float tanHalfFovx = tanHalfFovy * aspect;
 
-        float cascadeSplits[4] = { 8.0f, 24.0f, 60.0f, 130.0f };
+        float cascadeSplits[4] = { 15.0f, 45.0f, 112.5f, 240.0f };
 
         // We will store the final shadow matrices (with bias) to send to the shader
         float shadowMatrices[4 * 16];
@@ -671,7 +671,7 @@ namespace Arc
                 bx::Handedness::Right);
 
             // Set the view transform for this cascade
-            bgfx::setViewTransform(i, lightView, lightProj);
+            bgfx::setViewTransform(static_cast<bgfx::ViewId>(i), lightView, lightProj);
 
             // Calculate the shadow matrix for this cascade: shadowMtx = LightView * LightProj * Bias
             float mtxVP[16];
@@ -757,7 +757,7 @@ namespace Arc
             setObjectTransform(transform);
             bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
             bgfx::setIndexBuffer(m_handles->cubeIndexBuffer);
-            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW);
             bgfx::submit(i, m_handles->shadowProgram);
         }
 
@@ -787,7 +787,7 @@ namespace Arc
             setObjectTransform(transform);
             bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
             bgfx::setIndexBuffer(m_handles->sphereIndexBuffer);
-            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW);
             bgfx::submit(i, m_handles->shadowProgram);
         }
 
@@ -823,7 +823,7 @@ namespace Arc
             setObjectTransform(transform);
             bgfx::setVertexBuffer(0, gpuMesh.vertexBuffer);
             bgfx::setIndexBuffer(gpuMesh.indexBuffer);
-            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW);
             bgfx::submit(i, m_handles->shadowProgram);
         }
 
@@ -859,8 +859,8 @@ namespace Arc
 
     void Renderer::bindShadowUniformsAndTextures()
     {
-        // Bind shadow map texture to slot 5
-        bgfx::setTexture(5, m_handles->shadowMapSampler, m_handles->shadowTexture);
+        // Bind shadow map texture to slot 5 with explicit sampler flags
+        bgfx::setTexture(5, m_handles->shadowMapSampler, m_handles->shadowTexture, BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LEQUAL);
 
         // Upload shadow matrices
         bgfx::setUniform(m_handles->shadowMtxUniform, m_shadowMatrices, 4);
