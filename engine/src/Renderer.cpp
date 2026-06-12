@@ -21,6 +21,13 @@
 
 namespace Arc
 {
+    constexpr bgfx::ViewId ViewIdShadow0 = 0;
+    constexpr bgfx::ViewId ViewIdShadow1 = 1;
+    constexpr bgfx::ViewId ViewIdShadow2 = 2;
+    constexpr bgfx::ViewId ViewIdShadow3 = 3;
+    constexpr bgfx::ViewId ViewIdSkybox  = 4;
+    constexpr bgfx::ViewId ViewIdScene   = 5;
+
     namespace
     {
         struct PosNormalColorVertex
@@ -240,6 +247,13 @@ namespace Arc
         bgfx::UniformHandle skyHorizon = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle skyZenith = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle skySunGlow = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle shadowTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle shadowFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle shadowProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowMtxUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle shadowMapSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cameraForwardUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cascadeSplitsUniform = BGFX_INVALID_HANDLE;
         std::vector<GpuMesh> gpuMeshes;
         std::vector<GpuTexture> gpuTextures;
         std::unordered_map<std::string, TextureHandle> textureCache;
@@ -273,6 +287,21 @@ namespace Arc
         createDefaultTextures();
         createPrograms();
 
+        // Create 2048x2048 shadow depth texture and framebuffer
+        std::uint64_t shadowTextureFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LESS;
+        m_handles->shadowTexture = bgfx::createTexture2D(
+            2048,
+            2048,
+            false,
+            1,
+            bgfx::TextureFormat::D16,
+            shadowTextureFlags
+        );
+
+        bgfx::Attachment shadowAttachment;
+        shadowAttachment.init(m_handles->shadowTexture, bgfx::Access::Write);
+        m_handles->shadowFrameBuffer = bgfx::createFrameBuffer(1, &shadowAttachment, true);
+
         bgfx::setDebug(BGFX_DEBUG_TEXT);
         resize(m_width, m_height);
         m_initialized = true;
@@ -283,6 +312,13 @@ namespace Arc
         if(!m_initialized && m_handles == nullptr)
         {
             return;
+        }
+
+        if(bgfx::isValid(m_handles->shadowFrameBuffer))
+        {
+            bgfx::destroy(m_handles->shadowFrameBuffer);
+            m_handles->shadowFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->shadowTexture = BGFX_INVALID_HANDLE;
         }
 
         destroyPrograms();
@@ -298,17 +334,39 @@ namespace Arc
         m_width = width > 0 ? width : 1;
         m_height = height > 0 ? height : 1;
 
-        bgfx::setViewRect(0, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
-        bgfx::setViewRect(1, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
-        bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x101820ff, 1.0f, 0);
+        // Configure the 4 shadow cascade views in a 2x2 grid in the 2048x2048 framebuffer
+        for (bgfx::ViewId i = 0; i < 4; ++i)
+        {
+            bgfx::setViewFrameBuffer(i, m_handles->shadowFrameBuffer);
+            std::uint16_t x = (i % 2) * 1024;
+            std::uint16_t y = (i / 2) * 1024;
+            bgfx::setViewRect(i, x, y, 1024, 1024);
+        }
+
+        // Configure clears: only View 0 clears the depth buffer of the shadow map
+        bgfx::setViewClear(ViewIdShadow0, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
+        bgfx::setViewClear(ViewIdShadow1, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+        bgfx::setViewClear(ViewIdShadow2, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+        bgfx::setViewClear(ViewIdShadow3, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // Configure skybox and scene views (Views 4 and 5) to draw on the backbuffer (full screen)
+        bgfx::setViewFrameBuffer(ViewIdSkybox, BGFX_INVALID_HANDLE);
+        bgfx::setViewRect(ViewIdSkybox, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdSkybox, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x101820ff, 1.0f, 0);
+
+        bgfx::setViewFrameBuffer(ViewIdScene, BGFX_INVALID_HANDLE);
+        bgfx::setViewRect(ViewIdScene, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdScene, BGFX_CLEAR_NONE, 0, 1.0f, 0);
     }
 
     void Renderer::beginFrame()
     {
         m_stats = {};
         bgfx::dbgTextClear();
-        bgfx::touch(0);
-        bgfx::touch(1);
+        for (bgfx::ViewId i = 0; i < 6; ++i)
+        {
+            bgfx::touch(i);
+        }
         m_sceneActive = false;
     }
 
@@ -529,8 +587,8 @@ namespace Arc
             bgfx::getCaps()->homogeneousDepth,
             bx::Handedness::Right);
 
-        bgfx::setViewTransform(0, view, projection);
-        bgfx::setViewTransform(1, view, projection);
+        bgfx::setViewTransform(ViewIdSkybox, view, projection);
+        bgfx::setViewTransform(ViewIdScene, view, projection);
         m_sceneActive = true;
     }
 
@@ -539,6 +597,98 @@ namespace Arc
         m_light = light;
         m_light.direction = normalize(m_light.direction);
         m_light.intensity = std::max(m_light.intensity, 0.0f);
+
+        // Now calculate Cascaded Shadow Map (CSM) matrices
+        float aspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+        float fovRad = m_activeCamera.verticalFovDegrees * (bx::kPi / 180.0f);
+        float tanHalfFovy = std::tan(fovRad * 0.5f);
+        float tanHalfFovx = tanHalfFovy * aspect;
+
+        float cascadeSplits[4] = { 8.0f, 24.0f, 60.0f, 130.0f };
+
+        // We will store the final shadow matrices (with bias) to send to the shader
+        float shadowMatrices[4 * 16];
+
+        // Setup bias matrix
+        const float sy = bgfx::getCaps()->originBottomLeft ? 0.5f : -0.5f;
+        const float sz = bgfx::getCaps()->homogeneousDepth ? 0.5f : 1.0f;
+        const float tz = bgfx::getCaps()->homogeneousDepth ? 0.5f : 0.0f;
+
+        float biasMtx[16] = {
+            0.5f, 0.0f, 0.0f, 0.0f,
+            0.0f, sy,   0.0f, 0.0f,
+            0.0f, 0.0f, sz,   0.0f,
+            0.5f, 0.5f, tz,   1.0f,
+        };
+
+        Vec3 camForward = m_activeCamera.forward();
+
+        for (int i = 0; i < 4; ++i)
+        {
+            float zNear = (i == 0) ? m_activeCamera.nearPlane : cascadeSplits[i - 1];
+            float zFar = cascadeSplits[i];
+
+            // Centroid of the split frustum along Z axis
+            float zCenter = (zNear + zFar) * 0.5f;
+
+            // Far plane width and height
+            float xFar = zFar * tanHalfFovx;
+            float yFar = zFar * tanHalfFovy;
+
+            // Radius of bounding sphere (from center to far corner)
+            float dz = zFar - zCenter;
+            float radius = std::sqrt(xFar * xFar + yFar * yFar + dz * dz);
+            radius *= 1.05f; // small padding to avoid clipping at boundaries
+
+            // Centroid in world space
+            Vec3 centerWorld = m_activeCamera.position + camForward * zCenter;
+
+            // Positioning the light far enough back to catch shadow casters in front of the camera frustum
+            Vec3 lightEye = centerWorld - m_light.direction * (radius * 4.0f);
+            Vec3 lightTarget = centerWorld;
+
+            // Construct UP vector for the light view matrix
+            Vec3 lightUp = { 0.0f, 1.0f, 0.0f };
+            if (std::abs(m_light.direction.y) > 0.99f)
+            {
+                lightUp = { 0.0f, 0.0f, 1.0f };
+            }
+
+            float lightView[16];
+            bx::mtxLookAt(lightView, 
+                bx::Vec3{lightEye.x, lightEye.y, lightEye.z}, 
+                bx::Vec3{lightTarget.x, lightTarget.y, lightTarget.z}, 
+                bx::Vec3{lightUp.x, lightUp.y, lightUp.z}, 
+                bx::Handedness::Right);
+
+            float lightProj[16];
+            bx::mtxOrtho(lightProj, 
+                -radius, radius, 
+                -radius, radius, 
+                0.0f, radius * 8.0f, 
+                0.0f, 
+                bgfx::getCaps()->homogeneousDepth, 
+                bx::Handedness::Right);
+
+            // Set the view transform for this cascade
+            bgfx::setViewTransform(i, lightView, lightProj);
+
+            // Calculate the shadow matrix for this cascade: shadowMtx = LightView * LightProj * Bias
+            float mtxVP[16];
+            bx::mtxMul(mtxVP, lightView, lightProj);
+            
+            float shadowMtx[16];
+            bx::mtxMul(shadowMtx, mtxVP, biasMtx);
+
+            // Store in the float array
+            std::memcpy(&shadowMatrices[i * 16], shadowMtx, sizeof(shadowMtx));
+        }
+
+        std::memcpy(m_shadowMatrices, shadowMatrices, sizeof(shadowMatrices));
+        m_cascadeSplits[0] = cascadeSplits[0];
+        m_cascadeSplits[1] = cascadeSplits[1];
+        m_cascadeSplits[2] = cascadeSplits[2];
+        m_cascadeSplits[3] = cascadeSplits[3];
     }
 
     void Renderer::drawSkybox(const Skybox& skybox)
@@ -568,28 +718,29 @@ namespace Arc
         bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
         bgfx::setIndexBuffer(m_handles->cubeIndexBuffer);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_DEPTH_TEST_ALWAYS);
-        bgfx::submit(0, m_handles->skyProgram);
+        bgfx::submit(ViewIdSkybox, m_handles->skyProgram);
         ++m_stats.drawCalls;
-    }
-
-    void Renderer::drawGround(float size, const Material& material)
-    {
-        if(!m_sceneActive)
-        {
-            return;
-        }
-
-        const Transform transform{ { 0.0f, 0.0f, 0.0f }, {}, { size, 1.0f, size } };
-        setObjectTransform(transform);
-
-        setPbrUniforms(material);
-        bgfx::setVertexBuffer(0, m_handles->planeVertexBuffer);
-        bgfx::setIndexBuffer(m_handles->planeIndexBuffer);
-        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
-        bgfx::submit(1, m_handles->meshProgram);
-        ++m_stats.drawCalls;
-        ++m_stats.meshDraws;
-    }
+     }
+ 
+     void Renderer::drawGround(float size, const Material& material)
+     {
+         if(!m_sceneActive)
+         {
+             return;
+         }
+ 
+         const Transform transform{ { 0.0f, 0.0f, 0.0f }, {}, { size, 1.0f, size } };
+         setObjectTransform(transform);
+ 
+         setPbrUniforms(material);
+         bindShadowUniformsAndTextures();
+         bgfx::setVertexBuffer(0, m_handles->planeVertexBuffer);
+         bgfx::setIndexBuffer(m_handles->planeIndexBuffer);
+         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+         bgfx::submit(ViewIdScene, m_handles->meshProgram);
+         ++m_stats.drawCalls;
+         ++m_stats.meshDraws;
+     }
 
 
 
@@ -600,15 +751,27 @@ namespace Arc
             return;
         }
 
-        setObjectTransform(transform);
+        // 1. Submit to the 4 shadow views
+        for (bgfx::ViewId i = 0; i < 4; ++i)
+        {
+            setObjectTransform(transform);
+            bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
+            bgfx::setIndexBuffer(m_handles->cubeIndexBuffer);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+            bgfx::submit(i, m_handles->shadowProgram);
+        }
 
+        // 2. Submit to the main view
+        setObjectTransform(transform);
         setPbrUniforms(material);
+        bindShadowUniformsAndTextures();
         bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
         bgfx::setIndexBuffer(m_handles->cubeIndexBuffer);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
-        bgfx::submit(1, m_handles->meshProgram);
-        ++m_stats.drawCalls;
-        ++m_stats.meshDraws;
+        bgfx::submit(ViewIdScene, m_handles->meshProgram);
+
+        m_stats.drawCalls += 5;
+        m_stats.meshDraws++;
     }
 
     void Renderer::drawSphere(const Transform& transform, const Material& material)
@@ -618,14 +781,27 @@ namespace Arc
             return;
         }
 
+        // 1. Submit to the 4 shadow views
+        for (bgfx::ViewId i = 0; i < 4; ++i)
+        {
+            setObjectTransform(transform);
+            bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
+            bgfx::setIndexBuffer(m_handles->sphereIndexBuffer);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+            bgfx::submit(i, m_handles->shadowProgram);
+        }
+
+        // 2. Submit to the main view
         setObjectTransform(transform);
         setPbrUniforms(material);
+        bindShadowUniformsAndTextures();
         bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
         bgfx::setIndexBuffer(m_handles->sphereIndexBuffer);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
-        bgfx::submit(1, m_handles->meshProgram);
-        ++m_stats.drawCalls;
-        ++m_stats.meshDraws;
+        bgfx::submit(ViewIdScene, m_handles->meshProgram);
+
+        m_stats.drawCalls += 5;
+        m_stats.meshDraws++;
     }
 
     void Renderer::drawMesh(MeshHandle mesh, const Transform& transform, const Material& material)
@@ -641,14 +817,27 @@ namespace Arc
             return;
         }
 
+        // 1. Submit to the 4 shadow views
+        for (bgfx::ViewId i = 0; i < 4; ++i)
+        {
+            setObjectTransform(transform);
+            bgfx::setVertexBuffer(0, gpuMesh.vertexBuffer);
+            bgfx::setIndexBuffer(gpuMesh.indexBuffer);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+            bgfx::submit(i, m_handles->shadowProgram);
+        }
+
+        // 2. Submit to the main view
         setObjectTransform(transform);
         setPbrUniforms(material);
+        bindShadowUniformsAndTextures();
         bgfx::setVertexBuffer(0, gpuMesh.vertexBuffer);
         bgfx::setIndexBuffer(gpuMesh.indexBuffer);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
-        bgfx::submit(1, m_handles->meshProgram);
-        ++m_stats.drawCalls;
-        ++m_stats.meshDraws;
+        bgfx::submit(ViewIdScene, m_handles->meshProgram);
+
+        m_stats.drawCalls += 5;
+        m_stats.meshDraws++;
     }
 
     void Renderer::drawSun(const DirectionalLight& light, float distance, float size)
@@ -659,12 +848,31 @@ namespace Arc
         setObjectTransform(transform);
 
         setPbrUniforms({ light.color, 0.0f, 0.18f, 7.5f });
+        bindShadowUniformsAndTextures();
         bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
         bgfx::setIndexBuffer(m_handles->sphereIndexBuffer);
         bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
-        bgfx::submit(1, m_handles->meshProgram);
+        bgfx::submit(ViewIdScene, m_handles->meshProgram);
         ++m_stats.drawCalls;
         ++m_stats.meshDraws;
+    }
+
+    void Renderer::bindShadowUniformsAndTextures()
+    {
+        // Bind shadow map texture to slot 5
+        bgfx::setTexture(5, m_handles->shadowMapSampler, m_handles->shadowTexture);
+
+        // Upload shadow matrices
+        bgfx::setUniform(m_handles->shadowMtxUniform, m_shadowMatrices, 4);
+
+        // Upload camera forward vector
+        Vec3 forward = m_activeCamera.forward();
+        float camForward[] = { forward.x, forward.y, forward.z, 0.0f };
+        bgfx::setUniform(m_handles->cameraForwardUniform, camForward);
+
+        // Upload cascade splits
+        float splits[] = { m_cascadeSplits[0], m_cascadeSplits[1], m_cascadeSplits[2], m_cascadeSplits[3] };
+        bgfx::setUniform(m_handles->cascadeSplitsUniform, splits);
     }
 
     void Renderer::endFrame()
@@ -672,7 +880,7 @@ namespace Arc
         bgfx::dbgTextPrintf(1, 1, 0x4f, "Arc Engine");
         bgfx::dbgTextPrintf(1, 2, 0x0f, "Renderer: %s", bgfx::getRendererName(bgfx::getRendererType()));
         bgfx::dbgTextPrintf(1, 3, 0x0f, "FPS: %.1f", m_fps);
-        bgfx::dbgTextPrintf(1, 4, 0x0f, "Draw calls: %u | Meshes: %u", m_stats.drawCalls, m_stats.meshDraws);
+        bgfx::dbgTextPrintf(1, 4, 0x0f, "Draw calls: %u | Meshes: %u | Shadows: Active", m_stats.drawCalls, m_stats.meshDraws);
         bgfx::dbgTextPrintf(1, 5, 0x0f, "Move: WASD/QE | Look: hold RMB | Fast: Shift | Quit: Esc");
         bgfx::frame();
     }
@@ -766,8 +974,9 @@ namespace Arc
     {
         m_handles->meshProgram = loadProgram(shaderPath("vs_mesh.sc.bin"), shaderPath("fs_mesh.sc.bin"));
         m_handles->skyProgram = loadProgram(shaderPath("vs_sky.sc.bin"), shaderPath("fs_sky.sc.bin"));
+        m_handles->shadowProgram = loadProgram(shaderPath("vs_shadow.sc.bin"), shaderPath("fs_shadow.sc.bin"));
 
-        if(!valid(m_handles->meshProgram) || !valid(m_handles->skyProgram))
+        if(!valid(m_handles->meshProgram) || !valid(m_handles->skyProgram) || !valid(m_handles->shadowProgram))
         {
             throw std::runtime_error("Failed to create BGFX shader programs.");
         }
@@ -786,6 +995,10 @@ namespace Arc
         m_handles->skyHorizon = bgfx::createUniform("u_skyHorizon", bgfx::UniformType::Vec4);
         m_handles->skyZenith = bgfx::createUniform("u_skyZenith", bgfx::UniformType::Vec4);
         m_handles->skySunGlow = bgfx::createUniform("u_skySunGlow", bgfx::UniformType::Vec4);
+        m_handles->shadowMtxUniform = bgfx::createUniform("u_shadowMtx", bgfx::UniformType::Mat4, 4);
+        m_handles->shadowMapSampler = bgfx::createUniform("s_shadowMap", bgfx::UniformType::Sampler);
+        m_handles->cameraForwardUniform = bgfx::createUniform("u_cameraForward", bgfx::UniformType::Vec4);
+        m_handles->cascadeSplitsUniform = bgfx::createUniform("u_cascadeSplits", bgfx::UniformType::Vec4);
     }
 
     void Renderer::destroyGeometry()
@@ -963,6 +1176,36 @@ namespace Arc
         {
             bgfx::destroy(m_handles->meshProgram);
             m_handles->meshProgram = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->shadowProgram))
+        {
+            bgfx::destroy(m_handles->shadowProgram);
+            m_handles->shadowProgram = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->shadowMtxUniform))
+        {
+            bgfx::destroy(m_handles->shadowMtxUniform);
+            m_handles->shadowMtxUniform = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->shadowMapSampler))
+        {
+            bgfx::destroy(m_handles->shadowMapSampler);
+            m_handles->shadowMapSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->cameraForwardUniform))
+        {
+            bgfx::destroy(m_handles->cameraForwardUniform);
+            m_handles->cameraForwardUniform = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->cascadeSplitsUniform))
+        {
+            bgfx::destroy(m_handles->cascadeSplitsUniform);
+            m_handles->cascadeSplitsUniform = BGFX_INVALID_HANDLE;
         }
     }
 

@@ -7,6 +7,7 @@ SAMPLER2D(s_normal, 1);
 SAMPLER2D(s_metallicRoughness, 2);
 SAMPLER2D(s_ao, 3);
 SAMPLER2D(s_emissive, 4);
+SAMPLER2DSHADOW(s_shadowMap, 5);
 
 uniform vec4 u_lightDirection;
 uniform vec4 u_lightColor;
@@ -14,6 +15,10 @@ uniform vec4 u_cameraData;
 uniform vec4 u_ambientColor;
 uniform vec4 u_tint;
 uniform vec4 u_material;
+
+uniform mat4 u_shadowMtx[4];
+uniform vec4 u_cameraForward;
+uniform vec4 u_cascadeSplits;
 
 vec3 fresnelSchlick(float cosTheta, vec3 f0)
 {
@@ -83,9 +88,67 @@ void main()
     float geometry = geometrySmith(normal, viewDirection, lightDirection, roughness);
     vec3 specular = (normalDistribution * geometry * fresnel) / max(4.0 * nDotV * nDotL, 0.0001);
 
+    // --- Shadow Calculation ---
+    float depth = dot(v_worldPosition - u_cameraData.xyz, u_cameraForward.xyz);
+    int cascadeIndex = 0;
+    if (depth > u_cascadeSplits.x) {
+        cascadeIndex = 1;
+    }
+    if (depth > u_cascadeSplits.y) {
+        cascadeIndex = 2;
+    }
+    if (depth > u_cascadeSplits.z) {
+        cascadeIndex = 3;
+    }
+
+    mat4 shadowMtx = u_shadowMtx[0];
+    if (cascadeIndex == 1) {
+        shadowMtx = u_shadowMtx[1];
+    } else if (cascadeIndex == 2) {
+        shadowMtx = u_shadowMtx[2];
+    } else if (cascadeIndex == 3) {
+        shadowMtx = u_shadowMtx[3];
+    }
+
+    vec4 shadowProj = mul(shadowMtx, vec4(v_worldPosition, 1.0));
+    vec3 shadowCoord = shadowProj.xyz / shadowProj.w;
+
+    vec2 offset = vec2(0.0, 0.0);
+    if (cascadeIndex == 1) {
+        offset = vec2(0.5, 0.0);
+    } else if (cascadeIndex == 2) {
+        offset = vec2(0.0, 0.5);
+    } else if (cascadeIndex == 3) {
+        offset = vec2(0.5, 0.5);
+    }
+    shadowCoord.xy = shadowCoord.xy * 0.5 + offset;
+
+    // Slope-scaled depth bias to prevent shadow acne
+    float bias = max(0.0015 * (1.0 - nDotL), 0.0003);
+    float compareDepth = shadowCoord.z - bias;
+
+    // 3x3 PCF filter
+    float shadow = 0.0;
+    float texelSize = 1.0 / 2048.0;
+    for (float y = -1.0; y <= 1.0; y += 1.0)
+    {
+        for (float x = -1.0; x <= 1.0; x += 1.0)
+        {
+            shadow += shadow2D(s_shadowMap, vec3(shadowCoord.xy + vec2(x, y) * texelSize, compareDepth));
+        }
+    }
+    shadow /= 9.0;
+
+    // Fade out shadows beyond the last cascade split
+    if (depth > u_cascadeSplits.w)
+    {
+        float fade = saturate((depth - u_cascadeSplits.w) / 10.0);
+        shadow = mix(shadow, 1.0, fade);
+    }
+
     vec3 diffuseEnergy = (vec3(1.0, 1.0, 1.0) - fresnel) * (1.0 - metallic);
     vec3 radiance = u_lightColor.rgb * u_lightColor.a;
-    vec3 direct = (diffuseEnergy * albedo / 3.14159265 + specular) * radiance * nDotL;
+    vec3 direct = (diffuseEnergy * albedo / 3.14159265 + specular) * radiance * nDotL * shadow;
     vec3 ambient = albedo * u_ambientColor.rgb * u_ambientColor.a * (1.0 - metallic) * ao;
     vec3 emissive = albedo * emissiveSample * emissiveStrength;
 

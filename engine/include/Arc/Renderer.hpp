@@ -128,6 +128,7 @@ namespace Arc
         void destroyPrograms();
         void setObjectTransform(const Transform& transform);
         void setPbrUniforms(const Material& material);
+        void bindShadowUniformsAndTextures();
         [[nodiscard]] std::string shaderPath(const char* shaderName) const;
 
         Handles* m_handles = nullptr;
@@ -140,6 +141,8 @@ namespace Arc
         float m_frameTimeAccumulator = 0.0f;
         std::uint32_t m_frameCounter = 0;
         RenderStats m_stats{};
+        float m_shadowMatrices[4 * 16] = { 0.0f };
+        float m_cascadeSplits[4] = { 0.0f };
         bool m_sceneActive = false;
         bool m_initialized = false;
     };

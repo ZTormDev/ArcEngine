@@ -28,13 +28,13 @@ This roadmap tracks the path from the current BGFX/PBR sandbox to a more advance
 - Add default fallback textures. Done.
 - Add normal mapping in shaders. Done.
 
-## Milestone 3: Real Shadows
+## Milestone 3: Real Shadows [DONE]
 
-- Add directional light shadow map framebuffer.
-- Render shadow caster depth pass.
-- Sample shadow map in lighting pass.
-- Add PCF filtering.
-- Upgrade to cascaded shadow maps for large outdoor scenes.
+- Add directional light shadow map framebuffer. Done: 2048x2048 D16 depth texture framebuffer.
+- Render shadow caster depth pass. Done: shader-based depth rendering to viewports.
+- Sample shadow map in lighting pass. Done: mapped world positions to shadow coords.
+- Add PCF filtering. Done: 3x3 PCF filter.
+- Upgrade to cascaded shadow maps for large outdoor scenes. Done: 4-cascade bounding-sphere shadow mapping.
 
 ## Milestone 4: HDR And Post Processing
 
