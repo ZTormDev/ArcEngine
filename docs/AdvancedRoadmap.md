@@ -10,7 +10,6 @@ This roadmap tracks the path from the current BGFX/PBR sandbox to a more advance
 - Free camera.
 - Procedural cube, sphere, plane, skybox, and sun marker.
 - Starter PBR shader with GGX, Fresnel, roughness, metallic, emissive, ACES tonemapping, and gamma correction.
-- Projected planar shadows for the demo scene.
 - Scene object list with cube/sphere primitives.
 - FPS and render stats overlay.
 

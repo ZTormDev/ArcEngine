@@ -2,7 +2,7 @@
 
 Arc Engine is a basic C++ game engine template for Windows projects. The engine code and game code are intentionally separated so new games can replace the `game/` folder without changing engine internals.
 
-The example game renders a small BGFX sandbox scene with a procedural skybox, sun marker, ground, walls, cubes, spheres, planar projected shadows, FPS overlay, and a free camera.
+The example game renders a small BGFX sandbox scene with a procedural skybox, sun marker, ground, walls, cubes, spheres, FPS overlay, and a free camera.
 
 ## Requirements
 
@@ -48,9 +48,8 @@ scripts/       Build/run helper scripts
 - Builds are Release-only by default.
 - BGFX is initialized with `bgfx::RendererType::Vulkan`.
 - Mesh shading uses a starter PBR model: GGX specular, Schlick Fresnel, roughness, metallic, emissive, ambient fill, ACES tonemapping, and gamma correction.
-- The current shadow is a projected planar silhouette for the example scene. Full photorealistic projects should replace this with shadow maps or cascaded shadow maps.
 - The example scene now uses `Arc::Scene` objects instead of direct per-object draw calls from the game.
-- The debug overlay shows FPS, draw calls, mesh draws, and shadow draws.
+- The debug overlay shows FPS, draw calls, and mesh draws.
 - `AssetManager` can load starter `.gltf/.glb` mesh data through `cgltf` and `Renderer` can upload/draw static mesh handles.
 - glTF materials can reference albedo, normal, metallic/roughness, AO, and emissive textures.
 - The renderer caches texture files, supports embedded GLB image data, and provides default fallback textures.

@@ -68,7 +68,6 @@ namespace Arc
     {
         std::uint32_t drawCalls = 0;
         std::uint32_t meshDraws = 0;
-        std::uint32_t shadowDraws = 0;
     };
 
     struct MeshHandle
@@ -108,7 +107,6 @@ namespace Arc
         void setDirectionalLight(const DirectionalLight& light);
         void drawSkybox(const Skybox& skybox);
         void drawGround(float size, const Material& material);
-        void drawBlobShadow(const Transform& casterTransform, float groundY, float opacity);
         void drawCube(const Transform& transform, const Material& material);
         void drawSphere(const Transform& transform, const Material& material);
         void drawMesh(MeshHandle mesh, const Transform& transform, const Material& material);

@@ -57,11 +57,11 @@ private:
         const Arc::Material blackRubber{ { 0.015f, 0.014f, 0.013f, 1.0f }, 0.0f, 0.92f, 0.0f };
         const Arc::Material whiteCeramic{ { 0.92f, 0.90f, 0.86f, 1.0f }, 0.0f, 0.18f, 0.0f };
 
-        m_scene.addCube("Back Wall", { { 0.0f, 2.0f, -6.2f }, {}, { 8.0f, 2.0f, 0.18f } }, warmWall, false);
-        m_scene.addCube("Left Wall", { { -8.0f, 2.0f, 0.0f }, {}, { 0.18f, 2.0f, 6.2f } }, darkConcrete, false);
-        m_scene.addCube("Right Wall", { { 8.0f, 2.0f, 0.0f }, {}, { 0.18f, 2.0f, 6.2f } }, darkConcrete, false);
-        m_scene.addCube("Left Pillar", { { -5.4f, 0.9f, 3.8f }, {}, { 0.38f, 0.9f, 0.38f } }, warmWall, false);
-        m_scene.addCube("Right Pillar", { { 5.4f, 0.9f, 3.8f }, {}, { 0.38f, 0.9f, 0.38f } }, warmWall, false);
+        m_scene.addCube("Back Wall", { { 0.0f, 2.0f, -6.2f }, {}, { 8.0f, 2.0f, 0.18f } }, warmWall);
+        m_scene.addCube("Left Wall", { { -8.0f, 2.0f, 0.0f }, {}, { 0.18f, 2.0f, 6.2f } }, darkConcrete);
+        m_scene.addCube("Right Wall", { { 8.0f, 2.0f, 0.0f }, {}, { 0.18f, 2.0f, 6.2f } }, darkConcrete);
+        m_scene.addCube("Left Pillar", { { -5.4f, 0.9f, 3.8f }, {}, { 0.38f, 0.9f, 0.38f } }, warmWall);
+        m_scene.addCube("Right Pillar", { { 5.4f, 0.9f, 3.8f }, {}, { 0.38f, 0.9f, 0.38f } }, warmWall);
 
         m_animatedCubeIndex = m_scene.objects().size();
         m_scene.addCube("Animated Blue Cube", { { 0.0f, 1.05f, 0.0f }, {}, { 1.0f, 1.0f, 1.0f } }, bluePlastic);

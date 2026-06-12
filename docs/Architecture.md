@@ -13,7 +13,7 @@ Current engine modules:
 - `AssetManager`: `.gltf/.glb` mesh loading through `cgltf`, including PBR material texture references and embedded GLB image data.
 - `Input`: keyboard, mouse buttons, mouse delta.
 - `Camera` and `FreeCamera`: basic first-person camera movement.
-- `Renderer`: BGFX shader programs, procedural cube/sphere/plane geometry, uploaded static meshes, texture cache, fallback textures, PBR material texture binding, directional light, skybox, projected planar shadow, FPS/debug overlay.
+- `Renderer`: BGFX shader programs, procedural cube/sphere/plane geometry, uploaded static meshes, texture cache, fallback textures, PBR material texture binding, directional light, skybox, FPS/debug overlay.
 
 Rendering roadmap for more photorealistic projects:
 

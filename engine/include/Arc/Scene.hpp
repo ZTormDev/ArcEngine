@@ -22,15 +22,14 @@ namespace Arc
         MeshHandle mesh{};
         Transform transform{};
         Material material{};
-        bool castsShadow = true;
     };
 
     class Scene
     {
     public:
-        SceneObject& addCube(std::string name, const Transform& transform, const Material& material, bool castsShadow = true);
-        SceneObject& addSphere(std::string name, const Transform& transform, const Material& material, bool castsShadow = true);
-        SceneObject& addMesh(std::string name, MeshHandle mesh, const Transform& transform, const Material& material, bool castsShadow = true);
+        SceneObject& addCube(std::string name, const Transform& transform, const Material& material);
+        SceneObject& addSphere(std::string name, const Transform& transform, const Material& material);
+        SceneObject& addMesh(std::string name, MeshHandle mesh, const Transform& transform, const Material& material);
 
         void clear();
         void render(Renderer& renderer, float groundY = 0.0f) const;
@@ -39,7 +38,7 @@ namespace Arc
         [[nodiscard]] const std::vector<SceneObject>& objects() const;
 
     private:
-        SceneObject& addObject(std::string name, MeshPrimitive primitive, MeshHandle mesh, const Transform& transform, const Material& material, bool castsShadow);
+        SceneObject& addObject(std::string name, MeshPrimitive primitive, MeshHandle mesh, const Transform& transform, const Material& material);
 
         std::vector<SceneObject> m_objects;
     };

@@ -83,80 +83,8 @@ namespace Arc
             20, 21, 22, 20, 22, 23,
         };
 
-        const Vec3 CubeCorners[] = {
-            { -1.0f, -1.0f, -1.0f },
-            {  1.0f, -1.0f, -1.0f },
-            {  1.0f,  1.0f, -1.0f },
-            { -1.0f,  1.0f, -1.0f },
-            { -1.0f, -1.0f,  1.0f },
-            {  1.0f, -1.0f,  1.0f },
-            {  1.0f,  1.0f,  1.0f },
-            { -1.0f,  1.0f,  1.0f },
-        };
+        
 
-        struct ShadowPoint
-        {
-            float x;
-            float z;
-        };
-
-        [[nodiscard]] float cross2D(const ShadowPoint& origin, const ShadowPoint& a, const ShadowPoint& b)
-        {
-            return (a.x - origin.x) * (b.z - origin.z) - (a.z - origin.z) * (b.x - origin.x);
-        }
-
-        [[nodiscard]] std::vector<ShadowPoint> convexHull(std::vector<ShadowPoint> points)
-        {
-            std::sort(points.begin(), points.end(), [](const ShadowPoint& left, const ShadowPoint& right) {
-                if(left.x == right.x)
-                {
-                    return left.z < right.z;
-                }
-
-                return left.x < right.x;
-            });
-
-            points.erase(std::unique(points.begin(), points.end(), [](const ShadowPoint& left, const ShadowPoint& right) {
-                return std::abs(left.x - right.x) < 0.0001f && std::abs(left.z - right.z) < 0.0001f;
-            }), points.end());
-
-            if(points.size() <= 3)
-            {
-                return points;
-            }
-
-            std::vector<ShadowPoint> hull;
-            hull.reserve(points.size() * 2);
-
-            for(const ShadowPoint& point : points)
-            {
-                while(hull.size() >= 2 && cross2D(hull[hull.size() - 2], hull[hull.size() - 1], point) <= 0.0f)
-                {
-                    hull.pop_back();
-                }
-
-                hull.push_back(point);
-            }
-
-            const std::size_t lowerSize = hull.size();
-            for(std::size_t index = points.size() - 1; index > 0; --index)
-            {
-                const ShadowPoint& point = points[index - 1];
-                while(hull.size() > lowerSize && cross2D(hull[hull.size() - 2], hull[hull.size() - 1], point) <= 0.0f)
-                {
-                    hull.pop_back();
-                }
-
-                hull.push_back(point);
-            }
-
-            if(!hull.empty())
-            {
-                hull.pop_back();
-            }
-
-            return hull;
-        }
 
         const PosNormalColorVertex PlaneVertices[] = {
             { -1.0f, 0.0f, -1.0f, 0.0f, 1.0f, 0.0f, White },
@@ -663,93 +591,7 @@ namespace Arc
         ++m_stats.meshDraws;
     }
 
-    void Renderer::drawBlobShadow(const Transform& casterTransform, float groundY, float opacity)
-    {
-        if(!m_sceneActive || std::abs(m_light.direction.y) <= 0.0001f)
-        {
-            return;
-        }
 
-        std::vector<ShadowPoint> projectedPoints;
-        projectedPoints.reserve(std::size(CubeCorners));
-
-        float model[16];
-        bx::mtxSRT(
-            model,
-            casterTransform.scale.x,
-            casterTransform.scale.y,
-            casterTransform.scale.z,
-            casterTransform.rotation.x,
-            casterTransform.rotation.y,
-            casterTransform.rotation.z,
-            casterTransform.position.x,
-            casterTransform.position.y,
-            casterTransform.position.z);
-
-        for(const Vec3& corner : CubeCorners)
-        {
-            const float local[] = { corner.x, corner.y, corner.z, 1.0f };
-            float world[4];
-            bx::vec4MulMtx(world, local, model);
-
-            const float distanceToGround = (groundY - world[1]) / m_light.direction.y;
-            const Vec3 projected{
-                world[0] + m_light.direction.x * distanceToGround,
-                groundY,
-                world[2] + m_light.direction.z * distanceToGround
-            };
-
-            projectedPoints.push_back({ projected.x, projected.z });
-        }
-
-        const std::vector<ShadowPoint> hull = convexHull(std::move(projectedPoints));
-        if(hull.size() < 3)
-        {
-            return;
-        }
-
-        bgfx::TransientVertexBuffer shadowVertices;
-        bgfx::TransientIndexBuffer shadowIndices;
-        const std::uint32_t vertexCount = static_cast<std::uint32_t>(hull.size());
-        const std::uint32_t indexCount = static_cast<std::uint32_t>((hull.size() - 2) * 3);
-
-        if(bgfx::getAvailTransientVertexBuffer(vertexCount, PosNormalColorVertex::layout) < vertexCount ||
-            bgfx::getAvailTransientIndexBuffer(indexCount) < indexCount)
-        {
-            return;
-        }
-
-        bgfx::allocTransientVertexBuffer(&shadowVertices, vertexCount, PosNormalColorVertex::layout);
-        bgfx::allocTransientIndexBuffer(&shadowIndices, indexCount);
-
-        auto* vertices = reinterpret_cast<PosNormalColorVertex*>(shadowVertices.data);
-        for(std::size_t index = 0; index < hull.size(); ++index)
-        {
-            vertices[index] = { hull[index].x, groundY + 0.02f, hull[index].z, 0.0f, 1.0f, 0.0f, White };
-        }
-
-        auto* indices = reinterpret_cast<std::uint16_t*>(shadowIndices.data);
-        std::size_t writeIndex = 0;
-        for(std::uint16_t index = 1; index + 1 < hull.size(); ++index)
-        {
-            indices[writeIndex++] = 0;
-            indices[writeIndex++] = index;
-            indices[writeIndex++] = static_cast<std::uint16_t>(index + 1);
-        }
-
-        float identity[16];
-        bx::mtxIdentity(identity);
-        bgfx::setTransform(identity);
-
-        const float alpha = clamp(opacity, 0.0f, 1.0f);
-        setPbrUniforms({ { 0.02f, 0.025f, 0.03f, alpha }, 0.0f, 1.0f, 0.0f });
-        bgfx::setVertexBuffer(0, &shadowVertices);
-        bgfx::setIndexBuffer(&shadowIndices);
-        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_BLEND_ALPHA | BGFX_STATE_DEPTH_TEST_LEQUAL);
-        bgfx::submit(1, m_handles->meshProgram);
-        ++m_stats.drawCalls;
-        ++m_stats.shadowDraws;
-    }
 
     void Renderer::drawCube(const Transform& transform, const Material& material)
     {
@@ -830,7 +672,7 @@ namespace Arc
         bgfx::dbgTextPrintf(1, 1, 0x4f, "Arc Engine");
         bgfx::dbgTextPrintf(1, 2, 0x0f, "Renderer: %s", bgfx::getRendererName(bgfx::getRendererType()));
         bgfx::dbgTextPrintf(1, 3, 0x0f, "FPS: %.1f", m_fps);
-        bgfx::dbgTextPrintf(1, 4, 0x0f, "Draw calls: %u | Meshes: %u | Shadows: %u", m_stats.drawCalls, m_stats.meshDraws, m_stats.shadowDraws);
+        bgfx::dbgTextPrintf(1, 4, 0x0f, "Draw calls: %u | Meshes: %u", m_stats.drawCalls, m_stats.meshDraws);
         bgfx::dbgTextPrintf(1, 5, 0x0f, "Move: WASD/QE | Look: hold RMB | Fast: Shift | Quit: Esc");
         bgfx::frame();
     }

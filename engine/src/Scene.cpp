@@ -4,19 +4,19 @@
 
 namespace Arc
 {
-    SceneObject& Scene::addCube(std::string name, const Transform& transform, const Material& material, bool castsShadow)
+    SceneObject& Scene::addCube(std::string name, const Transform& transform, const Material& material)
     {
-        return addObject(std::move(name), MeshPrimitive::Cube, {}, transform, material, castsShadow);
+        return addObject(std::move(name), MeshPrimitive::Cube, {}, transform, material);
     }
 
-    SceneObject& Scene::addSphere(std::string name, const Transform& transform, const Material& material, bool castsShadow)
+    SceneObject& Scene::addSphere(std::string name, const Transform& transform, const Material& material)
     {
-        return addObject(std::move(name), MeshPrimitive::Sphere, {}, transform, material, castsShadow);
+        return addObject(std::move(name), MeshPrimitive::Sphere, {}, transform, material);
     }
 
-    SceneObject& Scene::addMesh(std::string name, MeshHandle mesh, const Transform& transform, const Material& material, bool castsShadow)
+    SceneObject& Scene::addMesh(std::string name, MeshHandle mesh, const Transform& transform, const Material& material)
     {
-        return addObject(std::move(name), MeshPrimitive::StaticMesh, mesh, transform, material, castsShadow);
+        return addObject(std::move(name), MeshPrimitive::StaticMesh, mesh, transform, material);
     }
 
     void Scene::clear()
@@ -28,11 +28,6 @@ namespace Arc
     {
         for(const SceneObject& object : m_objects)
         {
-            if(object.castsShadow)
-            {
-                renderer.drawBlobShadow(object.transform, groundY, object.primitive == MeshPrimitive::Sphere ? 0.24f : 0.36f);
-            }
-
             switch(object.primitive)
             {
             case MeshPrimitive::Cube:
@@ -58,9 +53,9 @@ namespace Arc
         return m_objects;
     }
 
-    SceneObject& Scene::addObject(std::string name, MeshPrimitive primitive, MeshHandle mesh, const Transform& transform, const Material& material, bool castsShadow)
+    SceneObject& Scene::addObject(std::string name, MeshPrimitive primitive, MeshHandle mesh, const Transform& transform, const Material& material)
     {
-        m_objects.push_back({ std::move(name), primitive, mesh, transform, material, castsShadow });
+        m_objects.push_back({ std::move(name), primitive, mesh, transform, material });
         return m_objects.back();
     }
 }
