@@ -55,19 +55,41 @@ namespace Arc
             initialize();
             onStart();
 
+            const std::uint64_t performanceFrequency = SDL_GetPerformanceFrequency();
+            const double targetFrameTime = 1.0 / 1000.0; // 1000 FPS limit
+
             while(m_running)
             {
                 m_input->beginFrame();
                 processEvents();
 
-                const std::uint64_t currentCounter = SDL_GetPerformanceCounter();
-                const float deltaSeconds = static_cast<float>(currentCounter - m_lastCounter) /
-                    static_cast<float>(SDL_GetPerformanceFrequency());
+                std::uint64_t currentCounter = SDL_GetPerformanceCounter();
+                double deltaSeconds = static_cast<double>(currentCounter - m_lastCounter) /
+                    static_cast<double>(performanceFrequency);
+
+                // Precise hybrid sleep/spin frame rate limiter
+                if (deltaSeconds < targetFrameTime)
+                {
+                    double timeToWait = targetFrameTime - deltaSeconds;
+                    std::uint32_t delayMs = static_cast<std::uint32_t>(timeToWait * 1000.0);
+                    if (delayMs > 0)
+                    {
+                        SDL_Delay(delayMs);
+                    }
+
+                    do
+                    {
+                        currentCounter = SDL_GetPerformanceCounter();
+                        deltaSeconds = static_cast<double>(currentCounter - m_lastCounter) /
+                            static_cast<double>(performanceFrequency);
+                    } while (deltaSeconds < targetFrameTime);
+                }
+
                 m_lastCounter = currentCounter;
 
-                onUpdate(deltaSeconds);
+                onUpdate(static_cast<float>(deltaSeconds));
                 m_renderer->beginFrame();
-                m_renderer->setFrameStats(deltaSeconds);
+                m_renderer->setFrameStats(static_cast<float>(deltaSeconds));
                 onRender(*m_renderer);
                 m_renderer->endFrame();
             }
@@ -156,7 +178,7 @@ namespace Arc
         init.platformData = platformData;
         init.resolution.width = m_config.width;
         init.resolution.height = m_config.height;
-        init.resolution.reset = BGFX_RESET_VSYNC;
+        init.resolution.reset = BGFX_RESET_NONE;
 
         if(!bgfx::init(init))
         {
@@ -225,7 +247,7 @@ namespace Arc
                 const auto width = static_cast<std::uint32_t>(std::max(event.window.data1, 1));
                 const auto height = static_cast<std::uint32_t>(std::max(event.window.data2, 1));
 
-                bgfx::reset(width, height, BGFX_RESET_VSYNC);
+                bgfx::reset(width, height, BGFX_RESET_NONE);
                 m_renderer->resize(width, height);
                 onResize(width, height);
             }
