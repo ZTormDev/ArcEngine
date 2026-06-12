@@ -41,6 +41,11 @@ void main()
     vec3 bloomColor = texture2D(s_bloomTex, uv).rgb;
     vec3 color = sceneColor + bloomColor * u_postParams.y;
 
+    if (color.x * 0.0 != 0.0 || color.x < 0.0) color.x = 0.0;
+    if (color.y * 0.0 != 0.0 || color.y < 0.0) color.y = 0.0;
+    if (color.z * 0.0 != 0.0 || color.z < 0.0) color.z = 0.0;
+    color = clamp(color, vec3(0.0, 0.0, 0.0), vec3(65000.0, 65000.0, 65000.0));
+
     float exposure = u_postParams.x;
     float wVal = u_postParams.w;
     bool autoExposureActive = (wVal > 0.5 && wVal < 1.5) || (wVal > 2.5);

@@ -26,6 +26,20 @@ vec3 untonemap(vec3 c)
     return c / max(1.0 - getLuminance(c), 0.0001);
 }
 
+bool is_invalid(float x)
+{
+    return x * 0.0 != 0.0 || x < 0.0;
+}
+
+vec3 sanitizeColor(vec3 c)
+{
+    if (is_invalid(c.x) || is_invalid(c.y) || is_invalid(c.z))
+    {
+        return vec3(0.0, 0.0, 0.0);
+    }
+    return clamp(c, vec3(0.0, 0.0, 0.0), vec3(65000.0, 65000.0, 65000.0));
+}
+
 // 9-tap Catmull-Rom bicubic filter to sample history and keep it sharp
 vec3 sampleTextureCatmullRom(sampler2D tex, vec2 uv, vec2 texSize)
 {
@@ -116,6 +130,7 @@ void main()
 
     // Read current pixel
     vec3 current = texture2D(s_currentTex, currentUV).rgb;
+    current = sanitizeColor(current);
 
     // Calculate mean and variance of 3x3 neighborhood of current frame in tonemapped space
     // centered around currentUV to align with the unjittered center color.
@@ -127,6 +142,7 @@ void main()
         for (int nx = -1; nx <= 1; ++nx)
         {
             vec3 c = texture2D(s_currentTex, currentUV + vec2(float(nx) * dx, float(ny) * dy)).rgb;
+            c = sanitizeColor(c);
             c = tonemap(c);
             m1 += c;
             m2 += c * c;
@@ -144,6 +160,7 @@ void main()
     // Sample reprojected history using high-quality Catmull-Rom filtering
     vec2 texSize = vec2(1.0 / dx, 1.0 / dy);
     vec3 history = sampleTextureCatmullRom(s_historyTex, historyUV, texSize);
+    history = sanitizeColor(history);
 
     // Apply tonemap to history to perform clipping in the same space
     history = tonemap(history);

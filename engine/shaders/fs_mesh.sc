@@ -66,9 +66,15 @@ void main()
     vec3 bitangent = normalize(cross(vertexNormal, tangent) * v_worldTangent.w);
     vec3 normalSample = texture2D(s_normal, v_texcoord0).xyz * 2.0 - 1.0;
     vec3 normal = normalize(tangent * normalSample.x + bitangent * normalSample.y + vertexNormal * normalSample.z);
-    vec3 viewDirection = normalize(u_cameraData.xyz - v_worldPosition);
+    vec3 viewDirVec = u_cameraData.xyz - v_worldPosition;
+    float viewDirLen = length(viewDirVec);
+    vec3 viewDirection = viewDirLen > 0.0001 ? viewDirVec / viewDirLen : u_cameraForward.xyz;
+
     vec3 lightDirection = normalize(-u_lightDirection.xyz);
-    vec3 halfway = normalize(viewDirection + lightDirection);
+
+    vec3 halfwayVec = viewDirection + lightDirection;
+    float halfwayLen = length(halfwayVec);
+    vec3 halfway = halfwayLen > 0.0001 ? halfwayVec / halfwayLen : vertexNormal;
 
     vec4 albedoSample = texture2D(s_albedo, v_texcoord0);
     vec4 metallicRoughnessSample = texture2D(s_metallicRoughness, v_texcoord0);
@@ -178,7 +184,7 @@ void main()
         float s = sin(angle);
         float c = cos(angle);
 
-        float texelSize = 1.0 / 8192.0;
+        float texelSize = 1.0 / 4096.0;
         float filterRadius = 3.0 * texelSize;
         if (cascadeIndex == 1) {
             filterRadius = 2.5 * texelSize;
@@ -216,10 +222,20 @@ void main()
 
     vec3 color = (direct + ambient + emissive);
 
+    // Safeguard color from NaNs, Infs, or negative values
+    if (color.x * 0.0 != 0.0 || color.x < 0.0) color.x = 0.0;
+    if (color.y * 0.0 != 0.0 || color.y < 0.0) color.y = 0.0;
+    if (color.z * 0.0 != 0.0 || color.z < 0.0) color.z = 0.0;
+    color = clamp(color, vec3(0.0, 0.0, 0.0), vec3(65000.0, 65000.0, 65000.0));
+
     vec2 currNDC = v_currClipPos.xy / v_currClipPos.w;
     vec2 prevNDC = v_prevClipPos.xy / v_prevClipPos.w;
     vec2 velocity = (currNDC - prevNDC) * 0.5;
     velocity.y *= u_cameraData.w;
+
+    // Safeguard velocity from NaNs or Infs
+    if (velocity.x * 0.0 != 0.0) velocity.x = 0.0;
+    if (velocity.y * 0.0 != 0.0) velocity.y = 0.0;
 
     gl_FragData[0] = vec4(color, u_tint.a * v_color0.a * albedoSample.a);
     gl_FragData[1] = vec4(velocity, 0.0, 1.0);

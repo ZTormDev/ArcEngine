@@ -175,8 +175,8 @@ namespace Arc
         bool m_initialized = false;
         int m_postProcessMode = 0; // 0 = Full HDR, 1 = Raw bypass, 2 = LDR
         float m_exposure = 1.15f;
-        float m_bloomIntensity = 0.25f;
-        float m_bloomThreshold = 0.5f;
+        float m_bloomIntensity = 0.5f;
+        float m_bloomThreshold = 1.0f;
         float m_currentViewProj[16] = { 0.0f };
         float m_prevViewProj[16] = { 0.0f };
         std::uint32_t m_jitterIndex = 0;
@@ -184,7 +184,7 @@ namespace Arc
         float m_jitterY = 0.0f;
         float m_prevJitterX = 0.0f;
         float m_prevJitterY = 0.0f;
-        bool m_bloomEnabled = false;
+        bool m_bloomEnabled = true;
         bool m_taaEnabled = true;
         bool m_dofEnabled = false;
         bool m_motionBlurEnabled = true;

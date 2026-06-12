@@ -453,11 +453,11 @@ namespace Arc
         createDefaultTextures();
         createPrograms();
 
-        // Create 8192x8192 shadow depth texture and framebuffer
+        // Create 4096x4096 shadow depth texture and framebuffer
         std::uint64_t shadowTextureFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP | BGFX_SAMPLER_COMPARE_LEQUAL;
         m_handles->shadowTexture = bgfx::createTexture2D(
-            8192,
-            8192,
+            4096,
+            4096,
             false,
             1,
             bgfx::TextureFormat::D32F,
@@ -569,13 +569,13 @@ namespace Arc
         m_width = width > 0 ? width : 1;
         m_height = height > 0 ? height : 1;
 
-        // Configure the 4 shadow cascade views in a 2x2 grid in the 8192x8192 framebuffer
+        // Configure the 4 shadow cascade views in a 2x2 grid in the 4096x4096 framebuffer
         for (bgfx::ViewId i = 0; i < 4; ++i)
         {
             bgfx::setViewFrameBuffer(i, m_handles->shadowFrameBuffer);
-            std::uint16_t x = (i % 2) * 4096;
-            std::uint16_t y = (i / 2) * 4096;
-            bgfx::setViewRect(i, x, y, 4096, 4096);
+            std::uint16_t x = (i % 2) * 2048;
+            std::uint16_t y = (i / 2) * 2048;
+            bgfx::setViewRect(i, x, y, 2048, 2048);
         }
 
         // Configure clears: clear the depth buffer for all shadow cascade quadrants
@@ -1195,7 +1195,7 @@ namespace Arc
             Vec3 lightUpAxis = cross(m_light.direction, lightRight);
 
             // Snap centerWorld to the shadow map texel grid to prevent flickering/shimmering
-            float texelSizeWorld = (2.0f * radius) / 4096.0f;
+            float texelSizeWorld = (2.0f * radius) / 2048.0f;
             float x = dot(centerWorld, lightRight);
             float y = dot(centerWorld, lightUpAxis);
             float snappedX = std::floor(x / texelSizeWorld) * texelSizeWorld;
