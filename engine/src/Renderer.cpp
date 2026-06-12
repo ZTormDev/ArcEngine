@@ -1434,7 +1434,8 @@ namespace Arc
 
     void Renderer::endFrame()
     {
-        // 1. Luminance Downsampling Chain (Pass 0: Log-Luminance; Passes 1-4: box averages)
+        // 1. Luminance Downsampling Chain
+        if (m_autoExposureEnabled)
         {
             // Pass 0: Downsample HDR scene texture to luminanceDownTextures[0] (256x256)
             float downParams[4] = { 0.0f, 1.0f / 256.0f, 0.0f, 0.0f }; // passIndex = 0 (log-lum)
@@ -1453,10 +1454,8 @@ namespace Arc
                 bgfx::setTexture(0, m_handles->textureSampler, m_handles->luminanceDownTextures[i - 1]);
                 renderFullScreenQuad(viewId, m_handles->luminanceDownProgram);
             }
-        }
 
-        // 2. Eye Adaptation Pass (blends current 1x1 luminance with previous adapted linear luminance)
-        {
+            // 2. Eye Adaptation Pass (blends current 1x1 luminance with previous adapted linear luminance)
             bgfx::setViewFrameBuffer(ViewIdLuminanceAdapt, m_handles->luminanceAdaptFrameBuffers[m_luminanceIndex]);
 
             float adaptParams[4] = { m_deltaTime, 1.5f, 1.2f, 0.0f }; // dt, speedUp, speedDown, unused
@@ -1466,7 +1465,10 @@ namespace Arc
             renderFullScreenQuad(ViewIdLuminanceAdapt, m_handles->luminanceAdaptProgram);
         }
 
+        bgfx::TextureHandle currentSource = m_handles->hdrColorTexture;
+
         // 3. Temporal Anti-Aliasing (TAA) Resolve Pass
+        if (m_taaEnabled)
         {
             bgfx::setViewFrameBuffer(ViewIdTAA, m_handles->taaHistoryFrameBuffers[m_taaHistoryIndex]);
 
@@ -1481,106 +1483,110 @@ namespace Arc
             bgfx::setTexture(1, m_handles->historyTexSampler, m_handles->taaHistoryTextures[1 - m_taaHistoryIndex]);
             bgfx::setTexture(2, m_handles->velocityTexSampler, m_handles->velocityTexture);
             renderFullScreenQuad(ViewIdTAA, m_handles->taaProgram);
+
+            currentSource = m_handles->taaHistoryTextures[m_taaHistoryIndex];
         }
 
-        // 4. Depth of Field (DoF) Pass (using TAA resolved texture as source)
+        // 4. Depth of Field (DoF) Pass (using current resolved texture as source)
+        if (m_dofEnabled)
         {
-            float dofParams[4];
-            if (m_dofEnabled)
-            {
-                dofParams[0] = 8.5f;   // focusDistance
-                dofParams[1] = 5.0f;   // focusRange
-                dofParams[2] = m_activeCamera.nearPlane;
-                dofParams[3] = m_activeCamera.farPlane;
-            }
-            else
-            {
-                dofParams[0] = 0.0f;
-                dofParams[1] = 999999.0f;
-                dofParams[2] = m_activeCamera.nearPlane;
-                dofParams[3] = m_activeCamera.farPlane;
-            }
+            bgfx::setViewFrameBuffer(ViewIdDepthOfField, m_handles->dofFrameBuffer);
+
+            float dofParams[4] = {
+                8.5f,   // focusDistance
+                5.0f,   // focusRange
+                m_activeCamera.nearPlane,
+                m_activeCamera.farPlane
+            };
             bgfx::setUniform(m_handles->dofParamsUniform, dofParams);
-            bgfx::setTexture(0, m_handles->currentTexSampler, m_handles->taaHistoryTextures[m_taaHistoryIndex]);
+            bgfx::setTexture(0, m_handles->currentTexSampler, currentSource);
             bgfx::setTexture(1, m_handles->depthTexSampler, m_handles->hdrDepthTexture);
             renderFullScreenQuad(ViewIdDepthOfField, m_handles->dofProgram);
+
+            currentSource = m_handles->dofTexture;
         }
 
-        // 5. Motion Blur Pass (using DoF output as source)
+        // 5. Motion Blur Pass (using current source as input)
+        if (m_motionBlurEnabled)
         {
+            bgfx::setViewFrameBuffer(ViewIdMotionBlur, m_handles->motionBlurFrameBuffer);
+
             float mbParams[4] = {
-                m_motionBlurEnabled ? 1.5f : 0.0f, // blurScale
+                1.5f,                              // blurScale
                 0.05f,                             // maxVelocityClamp
                 0.0f,
                 0.0f
             };
             bgfx::setUniform(m_handles->motionBlurParamsUniform, mbParams);
-            bgfx::setTexture(0, m_handles->currentTexSampler, m_handles->dofTexture);
+            bgfx::setTexture(0, m_handles->currentTexSampler, currentSource);
             bgfx::setTexture(1, m_handles->velocityTexSampler, m_handles->velocityTexture);
             renderFullScreenQuad(ViewIdMotionBlur, m_handles->motionBlurProgram);
+
+            currentSource = m_handles->motionBlurTexture;
         }
 
-        // 6. Bloom Downsample passes (working on Motion Blur output)
-        // Pass 0: Downsample motion-blurred scene to bloomDownTextures[0] and apply highlight prefilter
+        // 6. Bloom Downsample passes (working on current source)
+        if (m_bloomEnabled)
         {
+            // Pass 0: Downsample scene to bloomDownTextures[0] and apply highlight prefilter
             float downParams[4] = { m_bloomThreshold, 1.0f / static_cast<float>(m_width), 1.0f / static_cast<float>(m_height), 0.0f };
             bgfx::setUniform(m_handles->downParamsUniform, downParams);
-            bgfx::setTexture(0, m_handles->textureSampler, m_handles->motionBlurTexture);
+            bgfx::setTexture(0, m_handles->textureSampler, currentSource);
             renderFullScreenQuad(ViewIdBloomDown0, m_handles->bloomDownProgram);
+
+            // Pass 1 to 3: Successively downsample bloom mips
+            std::uint16_t currentW = static_cast<std::uint16_t>(m_width / 2);
+            std::uint16_t currentH = static_cast<std::uint16_t>(m_height / 2);
+            for (int i = 1; i < 4; ++i)
+            {
+                bgfx::ViewId viewId = static_cast<bgfx::ViewId>(ViewIdBloomDown0 + i);
+                float downParamsMips[4] = { 1.0f, 1.0f / static_cast<float>(currentW), 1.0f / static_cast<float>(currentH), 1.0f }; // passIndex = 1 (no threshold)
+                bgfx::setUniform(m_handles->downParamsUniform, downParamsMips);
+                bgfx::setTexture(0, m_handles->textureSampler, m_handles->bloomDownTextures[i - 1]);
+                renderFullScreenQuad(viewId, m_handles->bloomDownProgram);
+
+                currentW = std::max<std::uint16_t>(1, currentW / 2);
+                currentH = std::max<std::uint16_t>(1, currentH / 2);
+            }
+
+            // 7. Bloom Upsample passes
+            std::uint16_t upSizes[3][2];
+            upSizes[0][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 8);
+            upSizes[0][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 8);
+            upSizes[1][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 4);
+            upSizes[1][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 4);
+            upSizes[2][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 2);
+            upSizes[2][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 2);
+
+            // Pass 0: Upsample from bloomDownTextures[3] (W/16) + bloomDownTextures[2] (W/8) to bloomUpTextures[0] (W/8)
+            {
+                float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[0][0] / 2), 1.0f / static_cast<float>(upSizes[0][1] / 2), 0.85f };
+                bgfx::setUniform(m_handles->upParamsUniform, upParams);
+                bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomDownTextures[3]);
+                bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[2]);
+                renderFullScreenQuad(ViewIdBloomUp0, m_handles->bloomUpProgram);
+            }
+
+            // Pass 1: Upsample from bloomUpTextures[0] (W/8) + bloomDownTextures[1] (W/4) to bloomUpTextures[1] (W/4)
+            {
+                float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[1][0] / 2), 1.0f / static_cast<float>(upSizes[1][1] / 2), 0.85f };
+                bgfx::setUniform(m_handles->upParamsUniform, upParams);
+                bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomUpTextures[0]);
+                bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[1]);
+                renderFullScreenQuad(ViewIdBloomUp1, m_handles->bloomUpProgram);
+            }
+
+            // Pass 2: Upsample from bloomUpTextures[1] (W/4) + bloomDownTextures[0] (W/2) to bloomUpTextures[2] (W/2)
+            {
+                float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[2][0] / 2), 1.0f / static_cast<float>(upSizes[2][1] / 2), 0.85f };
+                bgfx::setUniform(m_handles->upParamsUniform, upParams);
+                bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomUpTextures[1]);
+                bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[0]);
+                renderFullScreenQuad(ViewIdBloomUp2, m_handles->bloomUpProgram);
+            }
         }
 
-        // Pass 1 to 3: Successively downsample bloom mips
-        std::uint16_t currentW = static_cast<std::uint16_t>(m_width / 2);
-        std::uint16_t currentH = static_cast<std::uint16_t>(m_height / 2);
-        for (int i = 1; i < 4; ++i)
-        {
-            bgfx::ViewId viewId = static_cast<bgfx::ViewId>(ViewIdBloomDown0 + i);
-            float downParams[4] = { 1.0f, 1.0f / static_cast<float>(currentW), 1.0f / static_cast<float>(currentH), 1.0f }; // passIndex = 1 (no threshold)
-            bgfx::setUniform(m_handles->downParamsUniform, downParams);
-            bgfx::setTexture(0, m_handles->textureSampler, m_handles->bloomDownTextures[i - 1]);
-            renderFullScreenQuad(viewId, m_handles->bloomDownProgram);
-
-            currentW = std::max<std::uint16_t>(1, currentW / 2);
-            currentH = std::max<std::uint16_t>(1, currentH / 2);
-        }
-
-        // 7. Bloom Upsample passes
-        std::uint16_t upSizes[3][2];
-        upSizes[0][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 8);
-        upSizes[0][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 8);
-        upSizes[1][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 4);
-        upSizes[1][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 4);
-        upSizes[2][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 2);
-        upSizes[2][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 2);
-
-        // Pass 0: Upsample from bloomDownTextures[3] (W/16) + bloomDownTextures[2] (W/8) to bloomUpTextures[0] (W/8)
-        {
-            float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[0][0] / 2), 1.0f / static_cast<float>(upSizes[0][1] / 2), 0.85f };
-            bgfx::setUniform(m_handles->upParamsUniform, upParams);
-            bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomDownTextures[3]);
-            bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[2]);
-            renderFullScreenQuad(ViewIdBloomUp0, m_handles->bloomUpProgram);
-        }
-
-        // Pass 1: Upsample from bloomUpTextures[0] (W/8) + bloomDownTextures[1] (W/4) to bloomUpTextures[1] (W/4)
-        {
-            float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[1][0] / 2), 1.0f / static_cast<float>(upSizes[1][1] / 2), 0.85f };
-            bgfx::setUniform(m_handles->upParamsUniform, upParams);
-            bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomUpTextures[0]);
-            bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[1]);
-            renderFullScreenQuad(ViewIdBloomUp1, m_handles->bloomUpProgram);
-        }
-
-        // Pass 2: Upsample from bloomUpTextures[1] (W/4) + bloomDownTextures[0] (W/2) to bloomUpTextures[2] (W/2)
-        {
-            float upParams[4] = { 0.85f, 1.0f / static_cast<float>(upSizes[2][0] / 2), 1.0f / static_cast<float>(upSizes[2][1] / 2), 0.85f };
-            bgfx::setUniform(m_handles->upParamsUniform, upParams);
-            bgfx::setTexture(0, m_handles->lowTexSampler, m_handles->bloomUpTextures[1]);
-            bgfx::setTexture(1, m_handles->highTexSampler, m_handles->bloomDownTextures[0]);
-            renderFullScreenQuad(ViewIdBloomUp2, m_handles->bloomUpProgram);
-        }
-
-        // 8. Final Postprocess pass (combines motion blurred scene and bloomUpTextures[2] to backbuffer)
+        // 8. Final Postprocess pass
         {
             float autoExposureVal = m_autoExposureEnabled ? 1.0f : 0.0f;
             float tonemapVal = m_tonemapEnabled ? 2.0f : 0.0f;
@@ -1592,7 +1598,7 @@ namespace Arc
                 autoExposureVal + tonemapVal
             };
             bgfx::setUniform(m_handles->postParamsUniform, postParams);
-            bgfx::setTexture(0, m_handles->sceneTexSampler, m_handles->motionBlurTexture);
+            bgfx::setTexture(0, m_handles->sceneTexSampler, currentSource);
             bgfx::setTexture(1, m_handles->bloomTexSampler, m_handles->bloomUpTextures[2]);
             bgfx::setTexture(2, m_handles->luminanceTexSampler, m_handles->luminanceAdaptTextures[m_luminanceIndex]);
             renderFullScreenQuad(ViewIdPostProcess, m_handles->postProgram);
