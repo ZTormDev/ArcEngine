@@ -11,8 +11,8 @@ namespace Arc
         float yaw = 0.0f;
         float pitch = 0.0f;
         float verticalFovDegrees = 70.0f;
-        float nearPlane = 0.1f;
-        float farPlane = 200.0f;
+        float nearPlane = 0.01f;
+        float farPlane = 4000.0f;
 
         [[nodiscard]] Vec3 forward() const;
         [[nodiscard]] Vec3 right() const;

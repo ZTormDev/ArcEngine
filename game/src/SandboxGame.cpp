@@ -30,49 +30,7 @@ private:
         m_cubeRotation += deltaSeconds * 0.6f;
         m_scene.objects()[m_animatedCubeIndex].transform.rotation = { m_cubeRotation * 0.4f, m_cubeRotation, 0.0f };
 
-        // Post-processing mode toggling
-        if (input().isKeyDown(Arc::Key::Num1))
-        {
-            renderer().setPostProcessingMode(0); // Full HDR
-        }
-        else if (input().isKeyDown(Arc::Key::Num2))
-        {
-            renderer().setPostProcessingMode(1); // Raw Bypass
-        }
-        else if (input().isKeyDown(Arc::Key::Num3))
-        {
-            renderer().setPostProcessingMode(2); // LDR
-        }
-
-        // Adjust post-processing exposure
-        if (input().isKeyDown(Arc::Key::I))
-        {
-            renderer().setExposure(renderer().exposure() + deltaSeconds * 1.5f);
-        }
-        if (input().isKeyDown(Arc::Key::O))
-        {
-            renderer().setExposure(std::max(0.0f, renderer().exposure() - deltaSeconds * 1.5f));
-        }
-
-        // Adjust bloom intensity
-        if (input().isKeyDown(Arc::Key::K))
-        {
-            renderer().setBloomIntensity(renderer().bloomIntensity() + deltaSeconds * 1.0f);
-        }
-        if (input().isKeyDown(Arc::Key::L))
-        {
-            renderer().setBloomIntensity(std::max(0.0f, renderer().bloomIntensity() - deltaSeconds * 1.0f));
-        }
-
-        // Adjust bloom threshold
-        if (input().isKeyDown(Arc::Key::U))
-        {
-            renderer().setBloomThreshold(renderer().bloomThreshold() + deltaSeconds * 1.0f);
-        }
-        if (input().isKeyDown(Arc::Key::J))
-        {
-            renderer().setBloomThreshold(std::max(0.0f, renderer().bloomThreshold() - deltaSeconds * 1.0f));
-        }
+        m_scene.updatePreviousTransforms();
     }
 
     void onRender(Arc::Renderer& renderer) override

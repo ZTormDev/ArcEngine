@@ -10,3 +10,6 @@ vec3 v_skyDirection : TEXCOORD1;
 vec3 v_worldPosition : TEXCOORD2;
 vec2 v_texcoord0 : TEXCOORD3;
 vec4 v_worldTangent : TEXCOORD4;
+vec4 v_currClipPos : TEXCOORD5;
+vec4 v_prevClipPos : TEXCOORD6;
+

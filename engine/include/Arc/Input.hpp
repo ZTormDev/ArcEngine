@@ -15,15 +15,6 @@ namespace Arc
         E,
         LeftShift,
         Escape,
-        Num1,
-        Num2,
-        Num3,
-        I,
-        O,
-        K,
-        L,
-        U,
-        J,
         Count
     };
 

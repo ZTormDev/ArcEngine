@@ -34,8 +34,17 @@ namespace Arc
     constexpr bgfx::ViewId ViewIdBloomUp0   = 10;
     constexpr bgfx::ViewId ViewIdBloomUp1   = 11;
     constexpr bgfx::ViewId ViewIdBloomUp2   = 12;
-    constexpr bgfx::ViewId ViewIdPostProcess = 13;
-    constexpr bgfx::ViewId ViewCount       = 14;
+    constexpr bgfx::ViewId ViewIdDepthOfField = 13;
+    constexpr bgfx::ViewId ViewIdTAA = 14;
+    constexpr bgfx::ViewId ViewIdMotionBlur = 15;
+    constexpr bgfx::ViewId ViewIdLuminanceDown0 = 16;
+    constexpr bgfx::ViewId ViewIdLuminanceDown1 = 17;
+    constexpr bgfx::ViewId ViewIdLuminanceDown2 = 18;
+    constexpr bgfx::ViewId ViewIdLuminanceDown3 = 19;
+    constexpr bgfx::ViewId ViewIdLuminanceDown4 = 20;
+    constexpr bgfx::ViewId ViewIdLuminanceAdapt = 21;
+    constexpr bgfx::ViewId ViewIdPostProcess = 22;
+    constexpr bgfx::ViewId ViewCount       = 23;
 
     namespace
     {
@@ -280,6 +289,18 @@ namespace Arc
                 bloomUpTextures[i] = BGFX_INVALID_HANDLE;
                 bloomUpFrameBuffers[i] = BGFX_INVALID_HANDLE;
             }
+            for (int i = 0; i < 2; ++i)
+            {
+                taaHistoryTextures[i] = BGFX_INVALID_HANDLE;
+                taaHistoryFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                luminanceAdaptTextures[i] = BGFX_INVALID_HANDLE;
+                luminanceAdaptFrameBuffers[i] = BGFX_INVALID_HANDLE;
+            }
+            for (int i = 0; i < 5; ++i)
+            {
+                luminanceDownTextures[i] = BGFX_INVALID_HANDLE;
+                luminanceDownFrameBuffers[i] = BGFX_INVALID_HANDLE;
+            }
         }
 
         struct GpuMesh
@@ -326,24 +347,73 @@ namespace Arc
         bgfx::UniformHandle shadowMapSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cameraForwardUniform = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cascadeSplitsUniform = BGFX_INVALID_HANDLE;
+        
+        // HDR Scene Framebuffer & Velocity (MRT)
         bgfx::TextureHandle hdrColorTexture = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle velocityTexture = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle hdrDepthTexture = BGFX_INVALID_HANDLE;
         bgfx::FrameBufferHandle hdrFrameBuffer = BGFX_INVALID_HANDLE;
+
+        // Bloom
         bgfx::TextureHandle bloomDownTextures[4];
         bgfx::FrameBufferHandle bloomDownFrameBuffers[4];
         bgfx::TextureHandle bloomUpTextures[3];
         bgfx::FrameBufferHandle bloomUpFrameBuffers[3];
         bgfx::ProgramHandle bloomDownProgram = BGFX_INVALID_HANDLE;
         bgfx::ProgramHandle bloomUpProgram = BGFX_INVALID_HANDLE;
-        bgfx::ProgramHandle postProgram = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle downParamsUniform = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle upParamsUniform = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle postParamsUniform = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle textureSampler = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle sceneTexSampler = BGFX_INVALID_HANDLE;
-        bgfx::UniformHandle bloomTexSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle lowTexSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle highTexSampler = BGFX_INVALID_HANDLE;
+
+        // TAA
+        bgfx::TextureHandle taaHistoryTextures[2];
+        bgfx::FrameBufferHandle taaHistoryFrameBuffers[2];
+        bgfx::ProgramHandle taaProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle taaParamsUniform = BGFX_INVALID_HANDLE;
+        
+        // Depth of Field
+        bgfx::TextureHandle dofTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle dofFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle dofProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle dofParamsUniform = BGFX_INVALID_HANDLE;
+
+        // Motion Blur
+        bgfx::TextureHandle motionBlurTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle motionBlurFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle motionBlurProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle motionBlurParamsUniform = BGFX_INVALID_HANDLE;
+
+        // Auto Exposure / Eye Adaptation
+        bgfx::TextureHandle luminanceDownTextures[5];
+        bgfx::FrameBufferHandle luminanceDownFrameBuffers[5];
+        bgfx::ProgramHandle luminanceDownProgram = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle luminanceAdaptTextures[2];
+        bgfx::FrameBufferHandle luminanceAdaptFrameBuffers[2];
+        bgfx::ProgramHandle luminanceAdaptProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle adaptationParamsUniform = BGFX_INVALID_HANDLE;
+
+        // Final Post
+        bgfx::ProgramHandle postProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle postParamsUniform = BGFX_INVALID_HANDLE;
+
+        // Shared Post-Process Samplers
+        bgfx::UniformHandle sceneTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle bloomTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle currentTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle historyTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle velocityTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle depthTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle luminanceTexSampler = BGFX_INVALID_HANDLE;
+
+        // Velocity tracking uniforms
+        bgfx::UniformHandle prevModelUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle prevViewProjUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle currentViewProjUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle taaJitterUniform = BGFX_INVALID_HANDLE;
+
+
         std::vector<GpuMesh> gpuMeshes;
         std::vector<GpuTexture> gpuTextures;
         std::unordered_map<std::string, TextureHandle> textureCache;
@@ -422,6 +492,7 @@ namespace Arc
             bgfx::destroy(m_handles->hdrFrameBuffer);
             m_handles->hdrFrameBuffer = BGFX_INVALID_HANDLE;
             m_handles->hdrColorTexture = BGFX_INVALID_HANDLE;
+            m_handles->velocityTexture = BGFX_INVALID_HANDLE;
             m_handles->hdrDepthTexture = BGFX_INVALID_HANDLE;
         }
 
@@ -442,6 +513,46 @@ namespace Arc
                 bgfx::destroy(m_handles->bloomUpFrameBuffers[i]);
                 m_handles->bloomUpFrameBuffers[i] = BGFX_INVALID_HANDLE;
                 m_handles->bloomUpTextures[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
+        for (int i = 0; i < 2; ++i)
+        {
+            if (bgfx::isValid(m_handles->taaHistoryFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->taaHistoryFrameBuffers[i]);
+                m_handles->taaHistoryFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->taaHistoryTextures[i] = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(m_handles->luminanceAdaptFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->luminanceAdaptFrameBuffers[i]);
+                m_handles->luminanceAdaptFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->luminanceAdaptTextures[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
+        if (bgfx::isValid(m_handles->dofFrameBuffer))
+        {
+            bgfx::destroy(m_handles->dofFrameBuffer);
+            m_handles->dofFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->dofTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->motionBlurFrameBuffer))
+        {
+            bgfx::destroy(m_handles->motionBlurFrameBuffer);
+            m_handles->motionBlurFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->motionBlurTexture = BGFX_INVALID_HANDLE;
+        }
+
+        for (int i = 0; i < 5; ++i)
+        {
+            if (bgfx::isValid(m_handles->luminanceDownFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->luminanceDownFrameBuffers[i]);
+                m_handles->luminanceDownFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->luminanceDownTextures[i] = BGFX_INVALID_HANDLE;
             }
         }
 
@@ -473,12 +584,13 @@ namespace Arc
         bgfx::setViewClear(ViewIdShadow2, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
         bgfx::setViewClear(ViewIdShadow3, BGFX_CLEAR_DEPTH, 0, 1.0f, 0);
 
-        // Destroy existing HDR resources if valid
+        // Destroy existing resources if valid
         if(bgfx::isValid(m_handles->hdrFrameBuffer))
         {
             bgfx::destroy(m_handles->hdrFrameBuffer);
             m_handles->hdrFrameBuffer = BGFX_INVALID_HANDLE;
             m_handles->hdrColorTexture = BGFX_INVALID_HANDLE;
+            m_handles->velocityTexture = BGFX_INVALID_HANDLE;
             m_handles->hdrDepthTexture = BGFX_INVALID_HANDLE;
         }
 
@@ -502,9 +614,57 @@ namespace Arc
             }
         }
 
-        // 1. Create HDR Framebuffer & textures
+        for (int i = 0; i < 2; ++i)
+        {
+            if (bgfx::isValid(m_handles->taaHistoryFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->taaHistoryFrameBuffers[i]);
+                m_handles->taaHistoryFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->taaHistoryTextures[i] = BGFX_INVALID_HANDLE;
+            }
+            if (bgfx::isValid(m_handles->luminanceAdaptFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->luminanceAdaptFrameBuffers[i]);
+                m_handles->luminanceAdaptFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->luminanceAdaptTextures[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
+        if (bgfx::isValid(m_handles->dofFrameBuffer))
+        {
+            bgfx::destroy(m_handles->dofFrameBuffer);
+            m_handles->dofFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->dofTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->motionBlurFrameBuffer))
+        {
+            bgfx::destroy(m_handles->motionBlurFrameBuffer);
+            m_handles->motionBlurFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->motionBlurTexture = BGFX_INVALID_HANDLE;
+        }
+
+        for (int i = 0; i < 5; ++i)
+        {
+            if (bgfx::isValid(m_handles->luminanceDownFrameBuffers[i]))
+            {
+                bgfx::destroy(m_handles->luminanceDownFrameBuffers[i]);
+                m_handles->luminanceDownFrameBuffers[i] = BGFX_INVALID_HANDLE;
+                m_handles->luminanceDownTextures[i] = BGFX_INVALID_HANDLE;
+            }
+        }
+
+        // 1. Create HDR Framebuffer & textures (MRT: color + velocity + depth)
         std::uint64_t rtFlags = BGFX_TEXTURE_RT | BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
         m_handles->hdrColorTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::RGBA16F,
+            rtFlags
+        );
+        m_handles->velocityTexture = bgfx::createTexture2D(
             static_cast<std::uint16_t>(m_width),
             static_cast<std::uint16_t>(m_height),
             false,
@@ -521,10 +681,11 @@ namespace Arc
             rtFlags
         );
 
-        bgfx::Attachment hdrAttachments[2];
+        bgfx::Attachment hdrAttachments[3];
         hdrAttachments[0].init(m_handles->hdrColorTexture, bgfx::Access::Write);
-        hdrAttachments[1].init(m_handles->hdrDepthTexture, bgfx::Access::Write);
-        m_handles->hdrFrameBuffer = bgfx::createFrameBuffer(2, hdrAttachments, true);
+        hdrAttachments[1].init(m_handles->velocityTexture, bgfx::Access::Write);
+        hdrAttachments[2].init(m_handles->hdrDepthTexture, bgfx::Access::Write);
+        m_handles->hdrFrameBuffer = bgfx::createFrameBuffer(3, hdrAttachments, true);
 
         // 2. Create Bloom Downsample levels (W/2, W/4, W/8, W/16)
         std::uint16_t w = static_cast<std::uint16_t>(m_width);
@@ -568,7 +729,99 @@ namespace Arc
             bgfx::setViewClear(viewId, BGFX_CLEAR_NONE, 0, 1.0f, 0);
         }
 
-        // 4. Configure skybox and scene views (Views 4 and 5) to draw on the HDR framebuffer
+        // 4. Create TAA double buffers
+        for (int i = 0; i < 2; ++i)
+        {
+            m_handles->taaHistoryTextures[i] = bgfx::createTexture2D(
+                static_cast<std::uint16_t>(m_width),
+                static_cast<std::uint16_t>(m_height),
+                false,
+                1,
+                bgfx::TextureFormat::RGBA16F,
+                rtFlags
+            );
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->taaHistoryTextures[i], bgfx::Access::Write);
+            m_handles->taaHistoryFrameBuffers[i] = bgfx::createFrameBuffer(1, &attachment, true);
+        }
+        bgfx::setViewRect(ViewIdTAA, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdTAA, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 5. Create DoF framebuffer
+        m_handles->dofTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::RGBA16F,
+            rtFlags
+        );
+        bgfx::Attachment dofAttachment;
+        dofAttachment.init(m_handles->dofTexture, bgfx::Access::Write);
+        m_handles->dofFrameBuffer = bgfx::createFrameBuffer(1, &dofAttachment, true);
+        bgfx::setViewFrameBuffer(ViewIdDepthOfField, m_handles->dofFrameBuffer);
+        bgfx::setViewRect(ViewIdDepthOfField, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdDepthOfField, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 6. Create Motion Blur framebuffer
+        m_handles->motionBlurTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::RGBA16F,
+            rtFlags
+        );
+        bgfx::Attachment mbAttachment;
+        mbAttachment.init(m_handles->motionBlurTexture, bgfx::Access::Write);
+        m_handles->motionBlurFrameBuffer = bgfx::createFrameBuffer(1, &mbAttachment, true);
+        bgfx::setViewFrameBuffer(ViewIdMotionBlur, m_handles->motionBlurFrameBuffer);
+        bgfx::setViewRect(ViewIdMotionBlur, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdMotionBlur, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 7. Create Luminance Downsample chain (256x256, 64x64, 16x16, 4x4, 1x1)
+        std::uint16_t lumSize = 256;
+        for (int i = 0; i < 5; ++i)
+        {
+            m_handles->luminanceDownTextures[i] = bgfx::createTexture2D(
+                lumSize,
+                lumSize,
+                false,
+                1,
+                bgfx::TextureFormat::RGBA16F,
+                rtFlags
+            );
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->luminanceDownTextures[i], bgfx::Access::Write);
+            m_handles->luminanceDownFrameBuffers[i] = bgfx::createFrameBuffer(1, &attachment, true);
+
+            bgfx::ViewId viewId = static_cast<bgfx::ViewId>(ViewIdLuminanceDown0 + i);
+            bgfx::setViewFrameBuffer(viewId, m_handles->luminanceDownFrameBuffers[i]);
+            bgfx::setViewRect(viewId, 0, 0, lumSize, lumSize);
+            bgfx::setViewClear(viewId, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+            lumSize = std::max<std::uint16_t>(1, lumSize / 4);
+        }
+
+        // 8. Create Luminance Adaptation double buffers (1x1)
+        for (int i = 0; i < 2; ++i)
+        {
+            m_handles->luminanceAdaptTextures[i] = bgfx::createTexture2D(
+                1,
+                1,
+                false,
+                1,
+                bgfx::TextureFormat::RGBA16F,
+                rtFlags
+            );
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->luminanceAdaptTextures[i], bgfx::Access::Write);
+            m_handles->luminanceAdaptFrameBuffers[i] = bgfx::createFrameBuffer(1, &attachment, true);
+        }
+        bgfx::setViewRect(ViewIdLuminanceAdapt, 0, 0, 1, 1);
+        bgfx::setViewClear(ViewIdLuminanceAdapt, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 9. Configure skybox and scene views (Views 4 and 5) to draw on the HDR framebuffer
         bgfx::setViewFrameBuffer(ViewIdSkybox, m_handles->hdrFrameBuffer);
         bgfx::setViewRect(ViewIdSkybox, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
         bgfx::setViewClear(ViewIdSkybox, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x101820ff, 1.0f, 0);
@@ -577,7 +830,7 @@ namespace Arc
         bgfx::setViewRect(ViewIdScene, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
         bgfx::setViewClear(ViewIdScene, BGFX_CLEAR_NONE, 0, 1.0f, 0);
 
-        // 5. Configure final Postprocess view (View 13) to draw on the backbuffer
+        // 10. Configure final Postprocess view to draw on the backbuffer
         bgfx::setViewFrameBuffer(ViewIdPostProcess, BGFX_INVALID_HANDLE);
         bgfx::setViewRect(ViewIdPostProcess, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
         bgfx::setViewClear(ViewIdPostProcess, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x000000ff, 1.0f, 0);
@@ -596,6 +849,7 @@ namespace Arc
 
     void Renderer::setFrameStats(float deltaSeconds)
     {
+        m_deltaTime = deltaSeconds;
         m_frameTimeAccumulator += deltaSeconds;
         ++m_frameCounter;
 
@@ -811,8 +1065,70 @@ namespace Arc
             bgfx::getCaps()->homogeneousDepth,
             bx::Handedness::Right);
 
-        bgfx::setViewTransform(ViewIdSkybox, view, projection);
-        bgfx::setViewTransform(ViewIdScene, view, projection);
+        // Copy previous viewProj matrix
+        std::memcpy(m_prevViewProj, m_currentViewProj, sizeof(m_currentViewProj));
+
+        // Compute current viewProj matrix (non-jittered)
+        float currentViewProj[16];
+        bx::mtxMul(currentViewProj, view, projection);
+        std::memcpy(m_currentViewProj, currentViewProj, sizeof(m_currentViewProj));
+
+        // If previous is zero, initialize it to current viewProj
+        bool prevIsZero = true;
+        for (int i = 0; i < 16; ++i)
+        {
+            if (m_prevViewProj[i] != 0.0f)
+            {
+                prevIsZero = false;
+                break;
+            }
+        }
+        if (prevIsZero)
+        {
+            std::memcpy(m_prevViewProj, m_currentViewProj, sizeof(m_currentViewProj));
+        }
+
+        // Upload current and previous ViewProj to the shader
+        bgfx::setUniform(m_handles->currentViewProjUniform, m_currentViewProj);
+        bgfx::setUniform(m_handles->prevViewProjUniform, m_prevViewProj);
+
+        // Store previous jitter
+        m_prevJitterX = m_jitterX;
+        m_prevJitterY = m_jitterY;
+
+        // Calculate Halton Jitter for TAA
+        static constexpr float Halton23[8][2] = {
+            {  0.0f,      -0.166667f },
+            { -0.25f,      0.166667f },
+            {  0.25f,     -0.388889f },
+            { -0.375f,    -0.055556f },
+            {  0.125f,     0.277778f },
+            { -0.125f,    -0.277778f },
+            {  0.375f,     0.055556f },
+            { -0.4375f,    0.388889f }
+        };
+
+        if (m_taaEnabled && m_postProcessMode == 0)
+        {
+            m_jitterIndex = (m_jitterIndex + 1) % 8;
+            float dx = Halton23[m_jitterIndex][0];
+            float dy = Halton23[m_jitterIndex][1];
+            m_jitterX = 2.0f * dx / static_cast<float>(m_width);
+            m_jitterY = 2.0f * dy / static_cast<float>(m_height);
+        }
+        else
+        {
+            m_jitterX = 0.0f;
+            m_jitterY = 0.0f;
+        }
+
+        float projectionJittered[16];
+        std::memcpy(projectionJittered, projection, sizeof(projection));
+        projectionJittered[8] += m_jitterX;
+        projectionJittered[9] += m_jitterY;
+
+        bgfx::setViewTransform(ViewIdSkybox, view, projectionJittered);
+        bgfx::setViewTransform(ViewIdScene, view, projectionJittered);
         m_sceneActive = true;
     }
 
@@ -969,6 +1285,7 @@ namespace Arc
  
          const Transform transform{ { 0.0f, 0.0f, 0.0f }, {}, { size, 1.0f, size } };
          setObjectTransform(transform);
+         setPrevObjectTransform(transform);
  
          setPbrUniforms(material);
          bindShadowUniformsAndTextures();
@@ -980,9 +1297,7 @@ namespace Arc
          ++m_stats.meshDraws;
      }
 
-
-
-    void Renderer::drawCube(const Transform& transform, const Material& material)
+    void Renderer::drawCube(const Transform& transform, const Transform& prevTransform, const Material& material)
     {
         if(!m_sceneActive)
         {
@@ -1001,6 +1316,7 @@ namespace Arc
 
         // 2. Submit to the main view
         setObjectTransform(transform);
+        setPrevObjectTransform(prevTransform);
         setPbrUniforms(material);
         bindShadowUniformsAndTextures();
         bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
@@ -1012,7 +1328,7 @@ namespace Arc
         m_stats.meshDraws++;
     }
 
-    void Renderer::drawSphere(const Transform& transform, const Material& material)
+    void Renderer::drawSphere(const Transform& transform, const Transform& prevTransform, const Material& material)
     {
         if(!m_sceneActive)
         {
@@ -1031,6 +1347,7 @@ namespace Arc
 
         // 2. Submit to the main view
         setObjectTransform(transform);
+        setPrevObjectTransform(prevTransform);
         setPbrUniforms(material);
         bindShadowUniformsAndTextures();
         bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
@@ -1042,7 +1359,7 @@ namespace Arc
         m_stats.meshDraws++;
     }
 
-    void Renderer::drawMesh(MeshHandle mesh, const Transform& transform, const Material& material)
+    void Renderer::drawMesh(MeshHandle mesh, const Transform& transform, const Transform& prevTransform, const Material& material)
     {
         if(!m_sceneActive || !mesh.isValid() || mesh.id >= m_handles->gpuMeshes.size())
         {
@@ -1067,6 +1384,7 @@ namespace Arc
 
         // 2. Submit to the main view
         setObjectTransform(transform);
+        setPrevObjectTransform(prevTransform);
         setPbrUniforms(material);
         bindShadowUniformsAndTextures();
         bgfx::setVertexBuffer(0, gpuMesh.vertexBuffer);
@@ -1084,6 +1402,7 @@ namespace Arc
         const Transform transform{ sunPosition, {}, { size, size, size } };
 
         setObjectTransform(transform);
+        setPrevObjectTransform(transform);
 
         setPbrUniforms({ light.color, 0.0f, 0.18f, 7.5f });
         bindShadowUniformsAndTextures();
@@ -1115,12 +1434,98 @@ namespace Arc
 
     void Renderer::endFrame()
     {
-        // 1. Bloom Downsample passes
-        // Pass 0: Downsample HDR scene texture to bloomDownTextures[0] and apply prefilter
+        // 1. Luminance Downsampling Chain (Pass 0: Log-Luminance; Passes 1-4: box averages)
+        {
+            // Pass 0: Downsample HDR scene texture to luminanceDownTextures[0] (256x256)
+            float downParams[4] = { 0.0f, 1.0f / 256.0f, 0.0f, 0.0f }; // passIndex = 0 (log-lum)
+            bgfx::setUniform(m_handles->downParamsUniform, downParams);
+            bgfx::setTexture(0, m_handles->textureSampler, m_handles->hdrColorTexture);
+            renderFullScreenQuad(ViewIdLuminanceDown0, m_handles->luminanceDownProgram);
+
+            // Passes 1-4: Progressively downsample down to 1x1
+            std::uint16_t size = 256;
+            for (int i = 1; i < 5; ++i)
+            {
+                size /= 4; // 64, 16, 4, 1
+                bgfx::ViewId viewId = static_cast<bgfx::ViewId>(ViewIdLuminanceDown0 + i);
+                float downParamsBox[4] = { 1.0f, 1.0f / static_cast<float>(size * 4), 0.0f, 0.0f }; // passIndex = 1 (box average)
+                bgfx::setUniform(m_handles->downParamsUniform, downParamsBox);
+                bgfx::setTexture(0, m_handles->textureSampler, m_handles->luminanceDownTextures[i - 1]);
+                renderFullScreenQuad(viewId, m_handles->luminanceDownProgram);
+            }
+        }
+
+        // 2. Eye Adaptation Pass (blends current 1x1 luminance with previous adapted linear luminance)
+        {
+            bgfx::setViewFrameBuffer(ViewIdLuminanceAdapt, m_handles->luminanceAdaptFrameBuffers[m_luminanceIndex]);
+
+            float adaptParams[4] = { m_deltaTime, 1.5f, 1.2f, 0.0f }; // dt, speedUp, speedDown, unused
+            bgfx::setUniform(m_handles->adaptationParamsUniform, adaptParams);
+            bgfx::setTexture(0, m_handles->currentTexSampler, m_handles->luminanceDownTextures[4]);
+            bgfx::setTexture(1, m_handles->historyTexSampler, m_handles->luminanceAdaptTextures[1 - m_luminanceIndex]);
+            renderFullScreenQuad(ViewIdLuminanceAdapt, m_handles->luminanceAdaptProgram);
+        }
+
+        // 3. Temporal Anti-Aliasing (TAA) Resolve Pass
+        {
+            bgfx::setViewFrameBuffer(ViewIdTAA, m_handles->taaHistoryFrameBuffers[m_taaHistoryIndex]);
+
+            float feedback = m_taaEnabled ? 0.95f : 0.0f;
+            float taaParams[4] = { feedback, 1.0f / static_cast<float>(m_width), 1.0f / static_cast<float>(m_height), 0.0f };
+            bgfx::setUniform(m_handles->taaParamsUniform, taaParams);
+
+            float taaJitter[4] = { m_jitterX * 0.5f, -m_jitterY * 0.5f, m_prevJitterX * 0.5f, -m_prevJitterY * 0.5f };
+            bgfx::setUniform(m_handles->taaJitterUniform, taaJitter);
+
+            bgfx::setTexture(0, m_handles->currentTexSampler, m_handles->hdrColorTexture);
+            bgfx::setTexture(1, m_handles->historyTexSampler, m_handles->taaHistoryTextures[1 - m_taaHistoryIndex]);
+            bgfx::setTexture(2, m_handles->velocityTexSampler, m_handles->velocityTexture);
+            renderFullScreenQuad(ViewIdTAA, m_handles->taaProgram);
+        }
+
+        // 4. Depth of Field (DoF) Pass (using TAA resolved texture as source)
+        {
+            float dofParams[4];
+            if (m_dofEnabled)
+            {
+                dofParams[0] = 8.5f;   // focusDistance
+                dofParams[1] = 5.0f;   // focusRange
+                dofParams[2] = m_activeCamera.nearPlane;
+                dofParams[3] = m_activeCamera.farPlane;
+            }
+            else
+            {
+                dofParams[0] = 0.0f;
+                dofParams[1] = 999999.0f;
+                dofParams[2] = m_activeCamera.nearPlane;
+                dofParams[3] = m_activeCamera.farPlane;
+            }
+            bgfx::setUniform(m_handles->dofParamsUniform, dofParams);
+            bgfx::setTexture(0, m_handles->currentTexSampler, m_handles->taaHistoryTextures[m_taaHistoryIndex]);
+            bgfx::setTexture(1, m_handles->depthTexSampler, m_handles->hdrDepthTexture);
+            renderFullScreenQuad(ViewIdDepthOfField, m_handles->dofProgram);
+        }
+
+        // 5. Motion Blur Pass (using DoF output as source)
+        {
+            float mbParams[4] = {
+                m_motionBlurEnabled ? 1.5f : 0.0f, // blurScale
+                0.05f,                             // maxVelocityClamp
+                0.0f,
+                0.0f
+            };
+            bgfx::setUniform(m_handles->motionBlurParamsUniform, mbParams);
+            bgfx::setTexture(0, m_handles->currentTexSampler, m_handles->dofTexture);
+            bgfx::setTexture(1, m_handles->velocityTexSampler, m_handles->velocityTexture);
+            renderFullScreenQuad(ViewIdMotionBlur, m_handles->motionBlurProgram);
+        }
+
+        // 6. Bloom Downsample passes (working on Motion Blur output)
+        // Pass 0: Downsample motion-blurred scene to bloomDownTextures[0] and apply highlight prefilter
         {
             float downParams[4] = { m_bloomThreshold, 1.0f / static_cast<float>(m_width), 1.0f / static_cast<float>(m_height), 0.0f };
             bgfx::setUniform(m_handles->downParamsUniform, downParams);
-            bgfx::setTexture(0, m_handles->textureSampler, m_handles->hdrColorTexture);
+            bgfx::setTexture(0, m_handles->textureSampler, m_handles->motionBlurTexture);
             renderFullScreenQuad(ViewIdBloomDown0, m_handles->bloomDownProgram);
         }
 
@@ -1139,7 +1544,7 @@ namespace Arc
             currentH = std::max<std::uint16_t>(1, currentH / 2);
         }
 
-        // 2. Bloom Upsample passes
+        // 7. Bloom Upsample passes
         std::uint16_t upSizes[3][2];
         upSizes[0][0] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_width) / 8);
         upSizes[0][1] = std::max<std::uint16_t>(1, static_cast<std::uint16_t>(m_height) / 8);
@@ -1175,12 +1580,21 @@ namespace Arc
             renderFullScreenQuad(ViewIdBloomUp2, m_handles->bloomUpProgram);
         }
 
-        // 3. Final Postprocess pass (combines HDR scene and bloomUpTextures[2] (W/2) to backbuffer)
+        // 8. Final Postprocess pass (combines motion blurred scene and bloomUpTextures[2] to backbuffer)
         {
-            float postParams[4] = { m_exposure, m_bloomIntensity, static_cast<float>(m_postProcessMode), 0.0f }; // exposure, bloomIntensity, mode, reserved
+            float autoExposureVal = m_autoExposureEnabled ? 1.0f : 0.0f;
+            float tonemapVal = m_tonemapEnabled ? 2.0f : 0.0f;
+            float bloomIntensityVal = m_bloomEnabled ? m_bloomIntensity : 0.0f;
+            float postParams[4] = {
+                m_exposure,
+                bloomIntensityVal,
+                static_cast<float>(m_postProcessMode),
+                autoExposureVal + tonemapVal
+            };
             bgfx::setUniform(m_handles->postParamsUniform, postParams);
-            bgfx::setTexture(0, m_handles->sceneTexSampler, m_handles->hdrColorTexture);
+            bgfx::setTexture(0, m_handles->sceneTexSampler, m_handles->motionBlurTexture);
             bgfx::setTexture(1, m_handles->bloomTexSampler, m_handles->bloomUpTextures[2]);
+            bgfx::setTexture(2, m_handles->luminanceTexSampler, m_handles->luminanceAdaptTextures[m_luminanceIndex]);
             renderFullScreenQuad(ViewIdPostProcess, m_handles->postProgram);
         }
 
@@ -1190,10 +1604,18 @@ namespace Arc
         bgfx::dbgTextPrintf(1, 3, 0x0f, "FPS: %.1f", m_fps);
         bgfx::dbgTextPrintf(1, 4, 0x0f, "Draw calls: %u | Meshes: %u | Shadows: Active", m_stats.drawCalls, m_stats.meshDraws);
 
-        const char* modeNames[] = { "Full HDR (Postprocessing Active)", "Raw Bypass (No Tonemap/Gamma/Bloom)", "LDR (Gamma 2.2 Only)" };
-        bgfx::dbgTextPrintf(1, 5, 0x0a, "Post-Processing Mode [1/2/3]: %s", modeNames[m_postProcessMode]);
-        bgfx::dbgTextPrintf(1, 6, 0x0b, "Exposure [I/O]: %.2f | Bloom Intensity [K/L]: %.2f | Bloom Threshold [U/J]: %.2f", m_exposure, m_bloomIntensity, m_bloomThreshold);
+        bgfx::dbgTextPrintf(1, 5, 0x0e, "TAA: %s | DoF: %s | Motion Blur: %s | Auto Exposure: %s | Bloom: %s",
+            m_taaEnabled ? "ON" : "OFF",
+            m_dofEnabled ? "ON" : "OFF",
+            m_motionBlurEnabled ? "ON" : "OFF",
+            m_autoExposureEnabled ? "ON" : "OFF",
+            m_bloomEnabled ? "ON" : "OFF");
+        bgfx::dbgTextPrintf(1, 6, 0x0e, "Tonemapping (ACES): %s", m_tonemapEnabled ? "ON" : "OFF");
         bgfx::dbgTextPrintf(1, 7, 0x0f, "Controls: Move: WASD/QE | Look: hold RMB | Fast: Shift | Quit: Esc");
+
+        // Swap TAA and Luminance history buffers
+        m_taaHistoryIndex = (m_taaHistoryIndex + 1) % 2;
+        m_luminanceIndex = (m_luminanceIndex + 1) % 2;
 
         bgfx::frame();
     }
@@ -1291,10 +1713,18 @@ namespace Arc
         m_handles->bloomDownProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_bloom_down.sc.bin"));
         m_handles->bloomUpProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_bloom_up.sc.bin"));
         m_handles->postProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_post.sc.bin"));
+        m_handles->taaProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_taa.sc.bin"));
+        m_handles->dofProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_dof.sc.bin"));
+        m_handles->motionBlurProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_motion_blur.sc.bin"));
+        m_handles->luminanceDownProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_luminance_down.sc.bin"));
+        m_handles->luminanceAdaptProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_luminance_adapt.sc.bin"));
 
         if(!valid(m_handles->meshProgram) || !valid(m_handles->skyProgram) || 
            !valid(m_handles->shadowProgram) || !valid(m_handles->bloomDownProgram) || 
-           !valid(m_handles->bloomUpProgram) || !valid(m_handles->postProgram))
+           !valid(m_handles->bloomUpProgram) || !valid(m_handles->postProgram) ||
+           !valid(m_handles->taaProgram) || !valid(m_handles->dofProgram) ||
+           !valid(m_handles->motionBlurProgram) || !valid(m_handles->luminanceDownProgram) ||
+           !valid(m_handles->luminanceAdaptProgram))
         {
             throw std::runtime_error("Failed to create BGFX shader programs.");
         }
@@ -1325,6 +1755,22 @@ namespace Arc
         m_handles->bloomTexSampler = bgfx::createUniform("s_bloomTex", bgfx::UniformType::Sampler);
         m_handles->lowTexSampler = bgfx::createUniform("s_lowTex", bgfx::UniformType::Sampler);
         m_handles->highTexSampler = bgfx::createUniform("s_highTex", bgfx::UniformType::Sampler);
+
+        m_handles->taaParamsUniform = bgfx::createUniform("u_taaParams", bgfx::UniformType::Vec4);
+        m_handles->dofParamsUniform = bgfx::createUniform("u_dofParams", bgfx::UniformType::Vec4);
+        m_handles->motionBlurParamsUniform = bgfx::createUniform("u_motionBlurParams", bgfx::UniformType::Vec4);
+        m_handles->adaptationParamsUniform = bgfx::createUniform("u_adaptationParams", bgfx::UniformType::Vec4);
+
+        m_handles->currentTexSampler = bgfx::createUniform("s_currentTex", bgfx::UniformType::Sampler);
+        m_handles->historyTexSampler = bgfx::createUniform("s_historyTex", bgfx::UniformType::Sampler);
+        m_handles->velocityTexSampler = bgfx::createUniform("s_velocityTex", bgfx::UniformType::Sampler);
+        m_handles->depthTexSampler = bgfx::createUniform("s_depthTex", bgfx::UniformType::Sampler);
+        m_handles->luminanceTexSampler = bgfx::createUniform("s_luminanceTex", bgfx::UniformType::Sampler);
+
+        m_handles->prevModelUniform = bgfx::createUniform("u_prevModel", bgfx::UniformType::Mat4);
+        m_handles->prevViewProjUniform = bgfx::createUniform("u_prevViewProj", bgfx::UniformType::Mat4);
+        m_handles->currentViewProjUniform = bgfx::createUniform("u_currentViewProj", bgfx::UniformType::Mat4);
+        m_handles->taaJitterUniform = bgfx::createUniform("u_taaJitter", bgfx::UniformType::Vec4);
     }
 
     void Renderer::destroyGeometry()
@@ -1599,6 +2045,100 @@ namespace Arc
             bgfx::destroy(m_handles->highTexSampler);
             m_handles->highTexSampler = BGFX_INVALID_HANDLE;
         }
+
+        if(valid(m_handles->taaProgram))
+        {
+            bgfx::destroy(m_handles->taaProgram);
+            m_handles->taaProgram = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->dofProgram))
+        {
+            bgfx::destroy(m_handles->dofProgram);
+            m_handles->dofProgram = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->motionBlurProgram))
+        {
+            bgfx::destroy(m_handles->motionBlurProgram);
+            m_handles->motionBlurProgram = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->luminanceDownProgram))
+        {
+            bgfx::destroy(m_handles->luminanceDownProgram);
+            m_handles->luminanceDownProgram = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->luminanceAdaptProgram))
+        {
+            bgfx::destroy(m_handles->luminanceAdaptProgram);
+            m_handles->luminanceAdaptProgram = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->taaParamsUniform))
+        {
+            bgfx::destroy(m_handles->taaParamsUniform);
+            m_handles->taaParamsUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->dofParamsUniform))
+        {
+            bgfx::destroy(m_handles->dofParamsUniform);
+            m_handles->dofParamsUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->motionBlurParamsUniform))
+        {
+            bgfx::destroy(m_handles->motionBlurParamsUniform);
+            m_handles->motionBlurParamsUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->adaptationParamsUniform))
+        {
+            bgfx::destroy(m_handles->adaptationParamsUniform);
+            m_handles->adaptationParamsUniform = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->currentTexSampler))
+        {
+            bgfx::destroy(m_handles->currentTexSampler);
+            m_handles->currentTexSampler = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->historyTexSampler))
+        {
+            bgfx::destroy(m_handles->historyTexSampler);
+            m_handles->historyTexSampler = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->velocityTexSampler))
+        {
+            bgfx::destroy(m_handles->velocityTexSampler);
+            m_handles->velocityTexSampler = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->depthTexSampler))
+        {
+            bgfx::destroy(m_handles->depthTexSampler);
+            m_handles->depthTexSampler = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->luminanceTexSampler))
+        {
+            bgfx::destroy(m_handles->luminanceTexSampler);
+            m_handles->luminanceTexSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->prevModelUniform))
+        {
+            bgfx::destroy(m_handles->prevModelUniform);
+            m_handles->prevModelUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->prevViewProjUniform))
+        {
+            bgfx::destroy(m_handles->prevViewProjUniform);
+            m_handles->prevViewProjUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->currentViewProjUniform))
+        {
+            bgfx::destroy(m_handles->currentViewProjUniform);
+            m_handles->currentViewProjUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->taaJitterUniform))
+        {
+            bgfx::destroy(m_handles->taaJitterUniform);
+            m_handles->taaJitterUniform = BGFX_INVALID_HANDLE;
+        }
     }
 
     void Renderer::setObjectTransform(const Transform& transform)
@@ -1618,13 +2158,30 @@ namespace Arc
         bgfx::setTransform(matrix);
     }
 
+    void Renderer::setPrevObjectTransform(const Transform& transform)
+    {
+        float matrix[16];
+        bx::mtxSRT(
+            matrix,
+            transform.scale.x,
+            transform.scale.y,
+            transform.scale.z,
+            transform.rotation.x,
+            transform.rotation.y,
+            transform.rotation.z,
+            transform.position.x,
+            transform.position.y,
+            transform.position.z);
+        bgfx::setUniform(m_handles->prevModelUniform, matrix);
+    }
+
     void Renderer::setPbrUniforms(const Material& material)
     {
         const float tint[] = { material.baseColor.r, material.baseColor.g, material.baseColor.b, material.baseColor.a };
         const float materialData[] = { material.metallic, material.roughness, material.emissive, 0.0f };
         const float lightDirection[] = { m_light.direction.x, m_light.direction.y, m_light.direction.z, 0.0f };
         const float lightColor[] = { m_light.color.r, m_light.color.g, m_light.color.b, m_light.intensity };
-        const float cameraData[] = { m_activeCamera.position.x, m_activeCamera.position.y, m_activeCamera.position.z, 1.15f };
+        const float cameraData[] = { m_activeCamera.position.x, m_activeCamera.position.y, m_activeCamera.position.z, bgfx::getCaps()->originBottomLeft ? 1.0f : -1.0f };
         const float ambientColor[] = { 0.34f, 0.39f, 0.46f, 0.38f };
 
         bgfx::setUniform(m_handles->tint, tint);

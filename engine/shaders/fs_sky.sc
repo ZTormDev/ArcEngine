@@ -24,5 +24,6 @@ void main()
     vec3 skyColor = mix(u_skyHorizon.rgb, u_skyZenith.rgb, skyBlend);
     float sunAmount = pow(max(dot(direction, normalize(-u_lightDirection.xyz)), 0.0), 256.0);
     skyColor += u_skySunGlow.rgb * sunAmount * 8.0;
-    gl_FragColor = vec4(skyColor, 1.0);
+    gl_FragData[0] = vec4(skyColor, 1.0);
+    gl_FragData[1] = vec4(0.0, 0.0, 0.0, 1.0);
 }

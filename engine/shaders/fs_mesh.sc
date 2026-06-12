@@ -1,4 +1,4 @@
-$input v_worldNormal, v_color0, v_worldPosition, v_texcoord0, v_worldTangent
+$input v_worldNormal, v_color0, v_worldPosition, v_texcoord0, v_worldTangent, v_currClipPos, v_prevClipPos
 
 #include <bgfx_shader.sh>
 
@@ -215,5 +215,12 @@ void main()
     vec3 emissive = albedo * emissiveSample * emissiveStrength;
 
     vec3 color = (direct + ambient + emissive);
-    gl_FragColor = vec4(color, u_tint.a * v_color0.a * albedoSample.a);
+
+    vec2 currNDC = v_currClipPos.xy / v_currClipPos.w;
+    vec2 prevNDC = v_prevClipPos.xy / v_prevClipPos.w;
+    vec2 velocity = (currNDC - prevNDC) * 0.5;
+    velocity.y *= u_cameraData.w;
+
+    gl_FragData[0] = vec4(color, u_tint.a * v_color0.a * albedoSample.a);
+    gl_FragData[1] = vec4(velocity, 0.0, 1.0);
 }

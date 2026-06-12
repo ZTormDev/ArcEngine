@@ -31,15 +31,23 @@ namespace Arc
             switch(object.primitive)
             {
             case MeshPrimitive::Cube:
-                renderer.drawCube(object.transform, object.material);
+                renderer.drawCube(object.transform, object.prevTransform, object.material);
                 break;
             case MeshPrimitive::Sphere:
-                renderer.drawSphere(object.transform, object.material);
+                renderer.drawSphere(object.transform, object.prevTransform, object.material);
                 break;
             case MeshPrimitive::StaticMesh:
-                renderer.drawMesh(object.mesh, object.transform, object.material);
+                renderer.drawMesh(object.mesh, object.transform, object.prevTransform, object.material);
                 break;
             }
+        }
+    }
+
+    void Scene::updatePreviousTransforms()
+    {
+        for(SceneObject& object : m_objects)
+        {
+            object.prevTransform = object.transform;
         }
     }
 
@@ -55,7 +63,7 @@ namespace Arc
 
     SceneObject& Scene::addObject(std::string name, MeshPrimitive primitive, MeshHandle mesh, const Transform& transform, const Material& material)
     {
-        m_objects.push_back({ std::move(name), primitive, mesh, transform, material });
+        m_objects.push_back({ std::move(name), primitive, mesh, transform, transform, material });
         return m_objects.back();
     }
 }

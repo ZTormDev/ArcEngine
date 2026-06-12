@@ -21,6 +21,7 @@ namespace Arc
         MeshPrimitive primitive = MeshPrimitive::Cube;
         MeshHandle mesh{};
         Transform transform{};
+        Transform prevTransform{};
         Material material{};
     };
 
@@ -33,6 +34,7 @@ namespace Arc
 
         void clear();
         void render(Renderer& renderer, float groundY = 0.0f) const;
+        void updatePreviousTransforms();
 
         [[nodiscard]] std::vector<SceneObject>& objects();
         [[nodiscard]] const std::vector<SceneObject>& objects() const;

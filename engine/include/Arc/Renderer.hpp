@@ -107,9 +107,9 @@ namespace Arc
         void setDirectionalLight(const DirectionalLight& light);
         void drawSkybox(const Skybox& skybox);
         void drawGround(float size, const Material& material);
-        void drawCube(const Transform& transform, const Material& material);
-        void drawSphere(const Transform& transform, const Material& material);
-        void drawMesh(MeshHandle mesh, const Transform& transform, const Material& material);
+        void drawCube(const Transform& transform, const Transform& prevTransform, const Material& material);
+        void drawSphere(const Transform& transform, const Transform& prevTransform, const Material& material);
+        void drawMesh(MeshHandle mesh, const Transform& transform, const Transform& prevTransform, const Material& material);
         void drawSun(const DirectionalLight& light, float distance, float size);
         void endFrame();
 
@@ -129,6 +129,21 @@ namespace Arc
         void setBloomThreshold(float threshold) { m_bloomThreshold = threshold; }
         [[nodiscard]] float bloomThreshold() const { return m_bloomThreshold; }
 
+        void setBloomEnabled(bool enabled) { m_bloomEnabled = enabled; }
+        [[nodiscard]] bool bloomEnabled() const { return m_bloomEnabled; }
+
+        void setTaaEnabled(bool enabled) { m_taaEnabled = enabled; }
+        [[nodiscard]] bool taaEnabled() const { return m_taaEnabled; }
+
+        void setDofEnabled(bool enabled) { m_dofEnabled = enabled; }
+        [[nodiscard]] bool dofEnabled() const { return m_dofEnabled; }
+
+        void setMotionBlurEnabled(bool enabled) { m_motionBlurEnabled = enabled; }
+        [[nodiscard]] bool motionBlurEnabled() const { return m_motionBlurEnabled; }
+
+        void setAutoExposureEnabled(bool enabled) { m_autoExposureEnabled = enabled; }
+        [[nodiscard]] bool autoExposureEnabled() const { return m_autoExposureEnabled; }
+
     private:
         struct Handles;
 
@@ -139,6 +154,7 @@ namespace Arc
         void destroyGeometry();
         void destroyPrograms();
         void setObjectTransform(const Transform& transform);
+        void setPrevObjectTransform(const Transform& transform);
         void setPbrUniforms(const Material& material);
         void bindShadowUniformsAndTextures();
         [[nodiscard]] std::string shaderPath(const char* shaderName) const;
@@ -161,5 +177,21 @@ namespace Arc
         float m_exposure = 1.15f;
         float m_bloomIntensity = 0.25f;
         float m_bloomThreshold = 0.5f;
+        float m_currentViewProj[16] = { 0.0f };
+        float m_prevViewProj[16] = { 0.0f };
+        std::uint32_t m_jitterIndex = 0;
+        float m_jitterX = 0.0f;
+        float m_jitterY = 0.0f;
+        float m_prevJitterX = 0.0f;
+        float m_prevJitterY = 0.0f;
+        bool m_bloomEnabled = false;
+        bool m_taaEnabled = true;
+        bool m_dofEnabled = false;
+        bool m_motionBlurEnabled = true;
+        bool m_autoExposureEnabled = false;
+        bool m_tonemapEnabled = false;
+        std::uint32_t m_taaHistoryIndex = 0;
+        std::uint32_t m_luminanceIndex = 0;
+        float m_deltaTime = 0.016f;
     };
 }

@@ -74,6 +74,11 @@ if(COMMAND bgfx_compile_shaders)
             "${ARC_SHADER_SOURCE_DIR}/fs_bloom_down.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_bloom_up.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_post.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_taa.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_dof.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_motion_blur.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_luminance_down.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_luminance_adapt.sc"
         VARYING_DEF "${ARC_SHADER_SOURCE_DIR}/varying.def.sc"
         OUTPUT_DIR "${ARC_SHADER_OUTPUT_DIR}"
         OUT_FILES_VAR ARC_FRAGMENT_SHADER_OUTPUTS

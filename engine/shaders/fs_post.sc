@@ -4,7 +4,8 @@ $input v_texcoord0
 
 SAMPLER2D(s_sceneTex, 0);
 SAMPLER2D(s_bloomTex, 1);
-uniform vec4 u_postParams; // x: exposure, y: bloomIntensity, z: reserved, w: reserved
+SAMPLER2D(s_luminanceTex, 2);
+uniform vec4 u_postParams; // x: exposure, y: bloomIntensity, z: postProcessMode, w: autoExposureEnabled
 
 vec3 acesTonemap(vec3 color)
 {
@@ -36,12 +37,34 @@ void main()
         return;
     }
 
-    // Mode 0.0: Full HDR Post-processing (Exposure + ACES + Bloom + Gamma 2.2)
+    // Mode 0.0: Full HDR Post-processing (Exposure + ACES/Tonemap + Bloom + Gamma 2.2)
     vec3 bloomColor = texture2D(s_bloomTex, uv).rgb;
     vec3 color = sceneColor + bloomColor * u_postParams.y;
-    color *= u_postParams.x;
-    color = acesTonemap(color);
+
+    float exposure = u_postParams.x;
+    float wVal = u_postParams.w;
+    bool autoExposureActive = (wVal > 0.5 && wVal < 1.5) || (wVal > 2.5);
+    bool tonemapActive = (wVal > 1.5);
+
+    if (autoExposureActive)
+    {
+        float avgL = texture2D(s_luminanceTex, vec2(0.5, 0.5)).r;
+        exposure = 0.22 / max(avgL, 0.001);
+    }
+
+    color *= exposure;
+
+    if (tonemapActive)
+    {
+        color = acesTonemap(color);
+    }
+    else
+    {
+        color = saturate(color);
+    }
+
     color = pow(max(color, vec3(0.0, 0.0, 0.0)), vec3(1.0/2.2, 1.0/2.2, 1.0/2.2));
 
     gl_FragColor = vec4(color, 1.0);
 }
+
