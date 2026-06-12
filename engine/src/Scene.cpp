@@ -6,12 +6,17 @@ namespace Arc
 {
     SceneObject& Scene::addCube(std::string name, const Transform& transform, const Material& material, bool castsShadow)
     {
-        return addObject(std::move(name), MeshPrimitive::Cube, transform, material, castsShadow);
+        return addObject(std::move(name), MeshPrimitive::Cube, {}, transform, material, castsShadow);
     }
 
     SceneObject& Scene::addSphere(std::string name, const Transform& transform, const Material& material, bool castsShadow)
     {
-        return addObject(std::move(name), MeshPrimitive::Sphere, transform, material, castsShadow);
+        return addObject(std::move(name), MeshPrimitive::Sphere, {}, transform, material, castsShadow);
+    }
+
+    SceneObject& Scene::addMesh(std::string name, MeshHandle mesh, const Transform& transform, const Material& material, bool castsShadow)
+    {
+        return addObject(std::move(name), MeshPrimitive::StaticMesh, mesh, transform, material, castsShadow);
     }
 
     void Scene::clear()
@@ -36,6 +41,9 @@ namespace Arc
             case MeshPrimitive::Sphere:
                 renderer.drawSphere(object.transform, object.material);
                 break;
+            case MeshPrimitive::StaticMesh:
+                renderer.drawMesh(object.mesh, object.transform, object.material);
+                break;
             }
         }
     }
@@ -50,9 +58,9 @@ namespace Arc
         return m_objects;
     }
 
-    SceneObject& Scene::addObject(std::string name, MeshPrimitive primitive, const Transform& transform, const Material& material, bool castsShadow)
+    SceneObject& Scene::addObject(std::string name, MeshPrimitive primitive, MeshHandle mesh, const Transform& transform, const Material& material, bool castsShadow)
     {
-        m_objects.push_back({ std::move(name), primitive, transform, material, castsShadow });
+        m_objects.push_back({ std::move(name), primitive, mesh, transform, material, castsShadow });
         return m_objects.back();
     }
 }

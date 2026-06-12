@@ -1,6 +1,7 @@
 find_package(SDL2 CONFIG REQUIRED)
 find_package(bgfx CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
+find_path(STB_INCLUDE_DIRS "stb_image.h")
 
 add_library(ArcEngine STATIC
     include/Arc/Application.hpp
@@ -8,8 +9,11 @@ add_library(ArcEngine STATIC
     include/Arc/Engine.hpp
     include/Arc/Input.hpp
     include/Arc/Math.hpp
+    include/Arc/Mesh.hpp
     include/Arc/Renderer.hpp
     include/Arc/Scene.hpp
+    include/Arc/AssetManager.hpp
+    src/AssetManager.cpp
     src/Application.cpp
     src/Camera.cpp
     src/Input.cpp
@@ -22,6 +26,8 @@ add_library(Arc::Engine ALIAS ArcEngine)
 target_include_directories(ArcEngine
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+        ${STB_INCLUDE_DIRS}
 )
 
 target_compile_features(ArcEngine PUBLIC cxx_std_20)

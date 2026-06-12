@@ -14,20 +14,20 @@ This roadmap tracks the path from the current BGFX/PBR sandbox to a more advance
 - Scene object list with cube/sphere primitives.
 - FPS and render stats overlay.
 
-## Milestone 1: Real Asset Pipeline
+## Milestone 1: Real Asset Pipeline [DONE]
 
-- Add `AssetManager`.
-- Load `.glb/.gltf` meshes.
-- Support indexed vertex buffers from assets.
-- Add texture loading and GPU texture cache.
-- Add material instances with texture slots.
+- Add `AssetManager`. Done: initial `cgltf` loader.
+- Load `.glb/.gltf` meshes. Done: triangle primitives with positions, normals, indices.
+- Support indexed vertex buffers from assets. Done: renderer static mesh handles with 32-bit indices.
+- Add texture loading and GPU texture cache. Done: `stb_image` texture upload/cache and embedded GLB image support.
+- Add material instances with texture slots. Done: material slots for albedo, normal, metallic/roughness, AO, and emissive.
 
-## Milestone 2: Real PBR Textures
+## Milestone 2: Real PBR Textures [DONE]
 
-- Add UV and tangent vertex layouts.
-- Add albedo, normal, roughness, metallic, AO, and emissive maps.
-- Add default fallback textures.
-- Add normal mapping in shaders.
+- Add UV and tangent vertex layouts. Done.
+- Add albedo, normal, roughness, metallic, AO, and emissive maps. Done via glTF PBR slots.
+- Add default fallback textures. Done.
+- Add normal mapping in shaders. Done.
 
 ## Milestone 3: Real Shadows
 

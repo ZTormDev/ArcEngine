@@ -11,13 +11,15 @@ namespace Arc
     enum class MeshPrimitive
     {
         Cube,
-        Sphere
+        Sphere,
+        StaticMesh
     };
 
     struct SceneObject
     {
         std::string name;
         MeshPrimitive primitive = MeshPrimitive::Cube;
+        MeshHandle mesh{};
         Transform transform{};
         Material material{};
         bool castsShadow = true;
@@ -28,6 +30,7 @@ namespace Arc
     public:
         SceneObject& addCube(std::string name, const Transform& transform, const Material& material, bool castsShadow = true);
         SceneObject& addSphere(std::string name, const Transform& transform, const Material& material, bool castsShadow = true);
+        SceneObject& addMesh(std::string name, MeshHandle mesh, const Transform& transform, const Material& material, bool castsShadow = true);
 
         void clear();
         void render(Renderer& renderer, float groundY = 0.0f) const;
@@ -36,7 +39,7 @@ namespace Arc
         [[nodiscard]] const std::vector<SceneObject>& objects() const;
 
     private:
-        SceneObject& addObject(std::string name, MeshPrimitive primitive, const Transform& transform, const Material& material, bool castsShadow);
+        SceneObject& addObject(std::string name, MeshPrimitive primitive, MeshHandle mesh, const Transform& transform, const Material& material, bool castsShadow);
 
         std::vector<SceneObject> m_objects;
     };

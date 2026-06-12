@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Arc/Application.hpp"
+#include "Arc/AssetManager.hpp"
 #include "Arc/Camera.hpp"
 #include "Arc/Input.hpp"
 #include "Arc/Math.hpp"

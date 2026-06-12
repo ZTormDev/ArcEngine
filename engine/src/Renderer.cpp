@@ -1,7 +1,12 @@
 #include "Arc/Renderer.hpp"
 
+#include "Arc/Mesh.hpp"
+
 #include <bgfx/bgfx.h>
 #include <bx/math.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #include <algorithm>
 #include <array>
@@ -11,6 +16,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Arc
@@ -26,6 +32,12 @@ namespace Arc
             float ny;
             float nz;
             std::uint32_t abgr;
+            float u = 0.0f;
+            float v = 0.0f;
+            float tx = 1.0f;
+            float ty = 0.0f;
+            float tz = 0.0f;
+            float tw = 1.0f;
 
             static bgfx::VertexLayout layout;
         };
@@ -33,6 +45,7 @@ namespace Arc
         bgfx::VertexLayout PosNormalColorVertex::layout;
 
         constexpr std::uint32_t White = 0xffffffffu;
+        constexpr std::uint32_t DefaultTextureId = UINT32_MAX;
 
         const PosNormalColorVertex CubeVertices[] = {
             { -1.0f, -1.0f,  1.0f,  0.0f,  0.0f,  1.0f, White },
@@ -262,6 +275,19 @@ namespace Arc
 
     struct Renderer::Handles
     {
+        struct GpuMesh
+        {
+            bgfx::VertexBufferHandle vertexBuffer = BGFX_INVALID_HANDLE;
+            bgfx::IndexBufferHandle indexBuffer = BGFX_INVALID_HANDLE;
+            bool alive = false;
+        };
+
+        struct GpuTexture
+        {
+            bgfx::TextureHandle texture = BGFX_INVALID_HANDLE;
+            bool alive = false;
+        };
+
         bgfx::VertexBufferHandle cubeVertexBuffer = BGFX_INVALID_HANDLE;
         bgfx::IndexBufferHandle cubeIndexBuffer = BGFX_INVALID_HANDLE;
         bgfx::VertexBufferHandle planeVertexBuffer = BGFX_INVALID_HANDLE;
@@ -278,9 +304,20 @@ namespace Arc
         bgfx::UniformHandle ambientColor = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle tint = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle material = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle albedoSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle normalSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle metallicRoughnessSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle aoSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle emissiveSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle skyHorizon = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle skyZenith = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle skySunGlow = BGFX_INVALID_HANDLE;
+        std::vector<GpuMesh> gpuMeshes;
+        std::vector<GpuTexture> gpuTextures;
+        std::unordered_map<std::string, TextureHandle> textureCache;
+        TextureHandle defaultWhiteTexture{};
+        TextureHandle defaultBlackTexture{};
+        TextureHandle defaultNormalTexture{};
     };
 
     Renderer::~Renderer()
@@ -300,9 +337,12 @@ namespace Arc
             .add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
             .add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
             .add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true)
+            .add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+            .add(bgfx::Attrib::Tangent, 4, bgfx::AttribType::Float)
             .end();
 
         createGeometry();
+        createDefaultTextures();
         createPrograms();
 
         bgfx::setDebug(BGFX_DEBUG_TEXT);
@@ -355,6 +395,188 @@ namespace Arc
             m_frameTimeAccumulator = 0.0f;
             m_frameCounter = 0;
         }
+    }
+
+    TextureHandle Renderer::loadTexture(const std::string& path, bool srgb)
+    {
+        if(path.empty())
+        {
+            return {};
+        }
+
+        const std::string cacheKey = path + (srgb ? "|srgb" : "|linear");
+        const auto existing = m_handles->textureCache.find(cacheKey);
+        if(existing != m_handles->textureCache.end())
+        {
+            return existing->second;
+        }
+
+        int width = 0;
+        int height = 0;
+        int channels = 0;
+        stbi_uc* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
+        if(pixels == nullptr)
+        {
+            throw std::runtime_error("Failed to load texture: " + path);
+        }
+
+        TextureHandle handle = createTextureFromRgbaPixels(pixels, static_cast<std::uint16_t>(width), static_cast<std::uint16_t>(height), srgb);
+        stbi_image_free(pixels);
+
+        m_handles->textureCache[cacheKey] = handle;
+        return handle;
+    }
+
+    TextureHandle Renderer::loadTextureFromMemory(const std::vector<std::uint8_t>& encodedData, const std::string& debugName, bool srgb)
+    {
+        if(encodedData.empty())
+        {
+            return {};
+        }
+
+        int width = 0;
+        int height = 0;
+        int channels = 0;
+        stbi_uc* pixels = stbi_load_from_memory(encodedData.data(), static_cast<int>(encodedData.size()), &width, &height, &channels, 4);
+        if(pixels == nullptr)
+        {
+            throw std::runtime_error("Failed to load embedded texture: " + debugName);
+        }
+
+        TextureHandle handle = createTextureFromRgbaPixels(pixels, static_cast<std::uint16_t>(width), static_cast<std::uint16_t>(height), srgb);
+        stbi_image_free(pixels);
+        return handle;
+    }
+
+    void Renderer::loadMaterialTextures(Material& material)
+    {
+        auto loadSlot = [this](TextureSlot& slot) {
+            if(slot.handle.isValid())
+            {
+                return;
+            }
+
+            if(!slot.encodedData.empty())
+            {
+                slot.handle = loadTextureFromMemory(slot.encodedData, slot.debugName, slot.srgb);
+            }
+            else if(!slot.path.empty())
+            {
+                slot.handle = loadTexture(slot.path, slot.srgb);
+            }
+        };
+
+        loadSlot(material.albedoTexture);
+        loadSlot(material.normalTexture);
+        loadSlot(material.metallicRoughnessTexture);
+        loadSlot(material.aoTexture);
+        loadSlot(material.emissiveTexture);
+    }
+
+    void Renderer::destroyTexture(TextureHandle handle)
+    {
+        if(!handle.isValid() || handle.id >= m_handles->gpuTextures.size())
+        {
+            return;
+        }
+
+        Handles::GpuTexture& texture = m_handles->gpuTextures[handle.id];
+        if(!texture.alive)
+        {
+            return;
+        }
+
+        if(bgfx::isValid(texture.texture))
+        {
+            bgfx::destroy(texture.texture);
+            texture.texture = BGFX_INVALID_HANDLE;
+        }
+
+        texture.alive = false;
+    }
+
+    MeshHandle Renderer::createMesh(const MeshData& meshData)
+    {
+        if(meshData.vertices.empty() || meshData.indices.empty())
+        {
+            return {};
+        }
+
+        std::vector<PosNormalColorVertex> vertices;
+        vertices.reserve(meshData.vertices.size());
+        for(const MeshVertex& vertex : meshData.vertices)
+        {
+            vertices.push_back({
+                vertex.position.x,
+                vertex.position.y,
+                vertex.position.z,
+                vertex.normal.x,
+                vertex.normal.y,
+                vertex.normal.z,
+                White,
+                vertex.uv.x,
+                vertex.uv.y,
+                vertex.tangent.x,
+                vertex.tangent.y,
+                vertex.tangent.z,
+                vertex.tangent.w
+            });
+        }
+
+        Handles::GpuMesh gpuMesh{};
+        gpuMesh.vertexBuffer = bgfx::createVertexBuffer(
+            bgfx::copy(vertices.data(), static_cast<std::uint32_t>(vertices.size() * sizeof(PosNormalColorVertex))),
+            PosNormalColorVertex::layout);
+        gpuMesh.indexBuffer = bgfx::createIndexBuffer(
+            bgfx::copy(meshData.indices.data(), static_cast<std::uint32_t>(meshData.indices.size() * sizeof(std::uint32_t))),
+            BGFX_BUFFER_INDEX32);
+        gpuMesh.alive = bgfx::isValid(gpuMesh.vertexBuffer) && bgfx::isValid(gpuMesh.indexBuffer);
+
+        if(!gpuMesh.alive)
+        {
+            if(bgfx::isValid(gpuMesh.indexBuffer))
+            {
+                bgfx::destroy(gpuMesh.indexBuffer);
+            }
+
+            if(bgfx::isValid(gpuMesh.vertexBuffer))
+            {
+                bgfx::destroy(gpuMesh.vertexBuffer);
+            }
+
+            return {};
+        }
+
+        m_handles->gpuMeshes.push_back(gpuMesh);
+        return { static_cast<std::uint32_t>(m_handles->gpuMeshes.size() - 1) };
+    }
+
+    void Renderer::destroyMesh(MeshHandle handle)
+    {
+        if(!handle.isValid() || handle.id >= m_handles->gpuMeshes.size())
+        {
+            return;
+        }
+
+        Handles::GpuMesh& gpuMesh = m_handles->gpuMeshes[handle.id];
+        if(!gpuMesh.alive)
+        {
+            return;
+        }
+
+        if(bgfx::isValid(gpuMesh.indexBuffer))
+        {
+            bgfx::destroy(gpuMesh.indexBuffer);
+            gpuMesh.indexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        if(bgfx::isValid(gpuMesh.vertexBuffer))
+        {
+            bgfx::destroy(gpuMesh.vertexBuffer);
+            gpuMesh.vertexBuffer = BGFX_INVALID_HANDLE;
+        }
+
+        gpuMesh.alive = false;
     }
 
     void Renderer::beginScene(const Camera& camera)
@@ -564,6 +786,29 @@ namespace Arc
         ++m_stats.meshDraws;
     }
 
+    void Renderer::drawMesh(MeshHandle mesh, const Transform& transform, const Material& material)
+    {
+        if(!m_sceneActive || !mesh.isValid() || mesh.id >= m_handles->gpuMeshes.size())
+        {
+            return;
+        }
+
+        const Handles::GpuMesh& gpuMesh = m_handles->gpuMeshes[mesh.id];
+        if(!gpuMesh.alive)
+        {
+            return;
+        }
+
+        setObjectTransform(transform);
+        setPbrUniforms(material);
+        bgfx::setVertexBuffer(0, gpuMesh.vertexBuffer);
+        bgfx::setIndexBuffer(gpuMesh.indexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(1, m_handles->meshProgram);
+        ++m_stats.drawCalls;
+        ++m_stats.meshDraws;
+    }
+
     void Renderer::drawSun(const DirectionalLight& light, float distance, float size)
     {
         const Vec3 sunPosition = m_activeCamera.position + normalize(light.direction) * -distance;
@@ -631,6 +876,50 @@ namespace Arc
             bgfx::copy(diskIndices.data(), static_cast<std::uint32_t>(diskIndices.size() * sizeof(std::uint16_t))));
     }
 
+    TextureHandle Renderer::createTextureFromRgbaPixels(const void* pixels, std::uint16_t width, std::uint16_t height, bool srgb)
+    {
+        if(pixels == nullptr || width == 0 || height == 0)
+        {
+            return {};
+        }
+
+        std::uint64_t flags = BGFX_SAMPLER_U_CLAMP | BGFX_SAMPLER_V_CLAMP;
+        if(srgb)
+        {
+            flags |= BGFX_TEXTURE_SRGB;
+        }
+
+        Handles::GpuTexture texture{};
+        texture.texture = bgfx::createTexture2D(
+            width,
+            height,
+            false,
+            1,
+            bgfx::TextureFormat::RGBA8,
+            flags,
+            bgfx::copy(pixels, static_cast<std::uint32_t>(width) * static_cast<std::uint32_t>(height) * 4u));
+        texture.alive = bgfx::isValid(texture.texture);
+
+        if(!texture.alive)
+        {
+            return {};
+        }
+
+        m_handles->gpuTextures.push_back(texture);
+        return { static_cast<std::uint32_t>(m_handles->gpuTextures.size() - 1) };
+    }
+
+    void Renderer::createDefaultTextures()
+    {
+        const std::uint32_t white = 0xffffffffu;
+        const std::uint32_t black = 0xff000000u;
+        const std::uint32_t flatNormal = 0xffff8080u;
+
+        m_handles->defaultWhiteTexture = createTextureFromRgbaPixels(&white, 1, 1, false);
+        m_handles->defaultBlackTexture = createTextureFromRgbaPixels(&black, 1, 1, false);
+        m_handles->defaultNormalTexture = createTextureFromRgbaPixels(&flatNormal, 1, 1, false);
+    }
+
     void Renderer::createPrograms()
     {
         m_handles->meshProgram = loadProgram(shaderPath("vs_mesh.sc.bin"), shaderPath("fs_mesh.sc.bin"));
@@ -647,6 +936,11 @@ namespace Arc
         m_handles->ambientColor = bgfx::createUniform("u_ambientColor", bgfx::UniformType::Vec4);
         m_handles->tint = bgfx::createUniform("u_tint", bgfx::UniformType::Vec4);
         m_handles->material = bgfx::createUniform("u_material", bgfx::UniformType::Vec4);
+        m_handles->albedoSampler = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
+        m_handles->normalSampler = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
+        m_handles->metallicRoughnessSampler = bgfx::createUniform("s_metallicRoughness", bgfx::UniformType::Sampler);
+        m_handles->aoSampler = bgfx::createUniform("s_ao", bgfx::UniformType::Sampler);
+        m_handles->emissiveSampler = bgfx::createUniform("s_emissive", bgfx::UniformType::Sampler);
         m_handles->skyHorizon = bgfx::createUniform("u_skyHorizon", bgfx::UniformType::Vec4);
         m_handles->skyZenith = bgfx::createUniform("u_skyZenith", bgfx::UniformType::Vec4);
         m_handles->skySunGlow = bgfx::createUniform("u_skySunGlow", bgfx::UniformType::Vec4);
@@ -658,6 +952,24 @@ namespace Arc
         {
             return;
         }
+
+        for(std::uint32_t index = 0; index < m_handles->gpuMeshes.size(); ++index)
+        {
+            destroyMesh({ index });
+        }
+
+        m_handles->gpuMeshes.clear();
+
+        for(std::uint32_t index = 0; index < m_handles->gpuTextures.size(); ++index)
+        {
+            destroyTexture({ index });
+        }
+
+        m_handles->gpuTextures.clear();
+        m_handles->textureCache.clear();
+        m_handles->defaultWhiteTexture = {};
+        m_handles->defaultBlackTexture = {};
+        m_handles->defaultNormalTexture = {};
 
         if(bgfx::isValid(m_handles->diskIndexBuffer))
         {
@@ -731,6 +1043,36 @@ namespace Arc
         {
             bgfx::destroy(m_handles->skyHorizon);
             m_handles->skyHorizon = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->emissiveSampler))
+        {
+            bgfx::destroy(m_handles->emissiveSampler);
+            m_handles->emissiveSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->aoSampler))
+        {
+            bgfx::destroy(m_handles->aoSampler);
+            m_handles->aoSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->metallicRoughnessSampler))
+        {
+            bgfx::destroy(m_handles->metallicRoughnessSampler);
+            m_handles->metallicRoughnessSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->normalSampler))
+        {
+            bgfx::destroy(m_handles->normalSampler);
+            m_handles->normalSampler = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->albedoSampler))
+        {
+            bgfx::destroy(m_handles->albedoSampler);
+            m_handles->albedoSampler = BGFX_INVALID_HANDLE;
         }
 
         if(valid(m_handles->material))
@@ -814,6 +1156,23 @@ namespace Arc
         bgfx::setUniform(m_handles->lightColor, lightColor);
         bgfx::setUniform(m_handles->cameraData, cameraData);
         bgfx::setUniform(m_handles->ambientColor, ambientColor);
+
+        auto textureOrDefault = [this](TextureHandle handle, TextureHandle fallback) -> bgfx::TextureHandle {
+            const TextureHandle selected = handle.isValid() ? handle : fallback;
+            if(selected.isValid() && selected.id < m_handles->gpuTextures.size() && m_handles->gpuTextures[selected.id].alive)
+            {
+                return m_handles->gpuTextures[selected.id].texture;
+            }
+
+            bgfx::TextureHandle invalid = BGFX_INVALID_HANDLE;
+            return invalid;
+        };
+
+        bgfx::setTexture(0, m_handles->albedoSampler, textureOrDefault(material.albedoTexture.handle, m_handles->defaultWhiteTexture));
+        bgfx::setTexture(1, m_handles->normalSampler, textureOrDefault(material.normalTexture.handle, m_handles->defaultNormalTexture));
+        bgfx::setTexture(2, m_handles->metallicRoughnessSampler, textureOrDefault(material.metallicRoughnessTexture.handle, m_handles->defaultWhiteTexture));
+        bgfx::setTexture(3, m_handles->aoSampler, textureOrDefault(material.aoTexture.handle, m_handles->defaultWhiteTexture));
+        bgfx::setTexture(4, m_handles->emissiveSampler, textureOrDefault(material.emissiveTexture.handle, m_handles->defaultWhiteTexture));
     }
 
     std::string Renderer::shaderPath(const char* shaderName) const

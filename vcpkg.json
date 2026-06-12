@@ -9,7 +9,9 @@
         "tools"
       ]
     },
+    "cgltf",
     "sdl2",
+    "stb",
     "vulkan-headers",
     "vulkan-loader"
   ]

@@ -10,9 +10,10 @@ The game should include headers from `engine/include/Arc` and avoid depending on
 Current engine modules:
 
 - `Application`: SDL2 window, main loop, resize handling, BGFX Vulkan initialization.
+- `AssetManager`: `.gltf/.glb` mesh loading through `cgltf`, including PBR material texture references and embedded GLB image data.
 - `Input`: keyboard, mouse buttons, mouse delta.
 - `Camera` and `FreeCamera`: basic first-person camera movement.
-- `Renderer`: BGFX shader programs, procedural cube/sphere/plane geometry, starter PBR material model, directional light, skybox, projected planar shadow, FPS/debug overlay.
+- `Renderer`: BGFX shader programs, procedural cube/sphere/plane geometry, uploaded static meshes, texture cache, fallback textures, PBR material texture binding, directional light, skybox, projected planar shadow, FPS/debug overlay.
 
 Rendering roadmap for more photorealistic projects:
 

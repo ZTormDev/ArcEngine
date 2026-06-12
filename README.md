@@ -51,8 +51,29 @@ scripts/       Build/run helper scripts
 - The current shadow is a projected planar silhouette for the example scene. Full photorealistic projects should replace this with shadow maps or cascaded shadow maps.
 - The example scene now uses `Arc::Scene` objects instead of direct per-object draw calls from the game.
 - The debug overlay shows FPS, draw calls, mesh draws, and shadow draws.
+- `AssetManager` can load starter `.gltf/.glb` mesh data through `cgltf` and `Renderer` can upload/draw static mesh handles.
+- glTF materials can reference albedo, normal, metallic/roughness, AO, and emissive textures.
+- The renderer caches texture files, supports embedded GLB image data, and provides default fallback textures.
 - Shaders are compiled during the CMake build with `bgfx[tools]` from vcpkg.
 - Dependencies are managed by vcpkg manifest mode through `vcpkg.json`.
+
+## Loading A Model
+
+```cpp
+Arc::AssetManager assets;
+Arc::ModelData model = assets.loadGltfModel("assets/models/example.glb");
+
+for(const Arc::MeshData& mesh : model.meshes)
+{
+    Arc::Material material = mesh.material;
+    renderer().loadMaterialTextures(material);
+
+    Arc::MeshHandle handle = renderer().createMesh(mesh);
+    scene.addMesh(mesh.name, handle, {}, material);
+}
+```
+
+The current loader supports triangle meshes with positions, normals, UVs, tangents, indices, base PBR factors, and common glTF PBR texture slots.
 
 This is a rendering foundation, not an Unreal Engine replacement yet. The next major realism steps are shadow maps, image-based lighting, HDR environment maps, texture/material loading, normal maps, post-processing, and asset import.
 

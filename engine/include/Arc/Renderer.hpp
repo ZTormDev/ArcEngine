@@ -5,9 +5,12 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace Arc
 {
+    struct MeshData;
+
     struct RendererConfig
     {
         std::uint32_t width = 1280;
@@ -22,12 +25,36 @@ namespace Arc
         float intensity = 5.0f;
     };
 
+    struct TextureHandle
+    {
+        std::uint32_t id = UINT32_MAX;
+
+        [[nodiscard]] bool isValid() const
+        {
+            return id != UINT32_MAX;
+        }
+    };
+
+    struct TextureSlot
+    {
+        TextureHandle handle{};
+        std::string path;
+        std::vector<std::uint8_t> encodedData;
+        std::string debugName;
+        bool srgb = false;
+    };
+
     struct Material
     {
         Color baseColor{ 1.0f, 1.0f, 1.0f, 1.0f };
         float metallic = 0.0f;
         float roughness = 0.55f;
         float emissive = 0.0f;
+        TextureSlot albedoTexture{ {}, {}, {}, {}, true };
+        TextureSlot normalTexture{};
+        TextureSlot metallicRoughnessTexture{};
+        TextureSlot aoTexture{};
+        TextureSlot emissiveTexture{ {}, {}, {}, {}, true };
     };
 
     struct Skybox
@@ -42,6 +69,16 @@ namespace Arc
         std::uint32_t drawCalls = 0;
         std::uint32_t meshDraws = 0;
         std::uint32_t shadowDraws = 0;
+    };
+
+    struct MeshHandle
+    {
+        std::uint32_t id = UINT32_MAX;
+
+        [[nodiscard]] bool isValid() const
+        {
+            return id != UINT32_MAX;
+        }
     };
 
     class Renderer
@@ -61,6 +98,12 @@ namespace Arc
 
         void beginFrame();
         void setFrameStats(float deltaSeconds);
+        [[nodiscard]] TextureHandle loadTexture(const std::string& path, bool srgb = false);
+        [[nodiscard]] TextureHandle loadTextureFromMemory(const std::vector<std::uint8_t>& encodedData, const std::string& debugName, bool srgb = false);
+        void loadMaterialTextures(Material& material);
+        void destroyTexture(TextureHandle handle);
+        [[nodiscard]] MeshHandle createMesh(const MeshData& meshData);
+        void destroyMesh(MeshHandle handle);
         void beginScene(const Camera& camera);
         void setDirectionalLight(const DirectionalLight& light);
         void drawSkybox(const Skybox& skybox);
@@ -68,6 +111,7 @@ namespace Arc
         void drawBlobShadow(const Transform& casterTransform, float groundY, float opacity);
         void drawCube(const Transform& transform, const Material& material);
         void drawSphere(const Transform& transform, const Material& material);
+        void drawMesh(MeshHandle mesh, const Transform& transform, const Material& material);
         void drawSun(const DirectionalLight& light, float distance, float size);
         void endFrame();
 
@@ -80,6 +124,8 @@ namespace Arc
 
         void createGeometry();
         void createPrograms();
+        [[nodiscard]] TextureHandle createTextureFromRgbaPixels(const void* pixels, std::uint16_t width, std::uint16_t height, bool srgb);
+        void createDefaultTextures();
         void destroyGeometry();
         void destroyPrograms();
         void setObjectTransform(const Transform& transform);

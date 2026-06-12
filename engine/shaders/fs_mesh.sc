@@ -1,6 +1,12 @@
-$input v_worldNormal, v_color0, v_worldPosition
+$input v_worldNormal, v_color0, v_worldPosition, v_texcoord0, v_worldTangent
 
 #include <bgfx_shader.sh>
+
+SAMPLER2D(s_albedo, 0);
+SAMPLER2D(s_normal, 1);
+SAMPLER2D(s_metallicRoughness, 2);
+SAMPLER2D(s_ao, 3);
+SAMPLER2D(s_emissive, 4);
 
 uniform vec4 u_lightDirection;
 uniform vec4 u_lightColor;
@@ -50,14 +56,23 @@ vec3 acesTonemap(vec3 color)
 
 void main()
 {
-    vec3 normal = normalize(v_worldNormal);
+    vec3 vertexNormal = normalize(v_worldNormal);
+    vec3 tangent = normalize(v_worldTangent.xyz);
+    vec3 bitangent = normalize(cross(vertexNormal, tangent) * v_worldTangent.w);
+    vec3 normalSample = texture2D(s_normal, v_texcoord0).xyz * 2.0 - 1.0;
+    vec3 normal = normalize(tangent * normalSample.x + bitangent * normalSample.y + vertexNormal * normalSample.z);
     vec3 viewDirection = normalize(u_cameraData.xyz - v_worldPosition);
     vec3 lightDirection = normalize(-u_lightDirection.xyz);
     vec3 halfway = normalize(viewDirection + lightDirection);
 
-    vec3 albedo = max(v_color0.rgb * u_tint.rgb, vec3(0.0, 0.0, 0.0));
-    float metallic = saturate(u_material.x);
-    float roughness = clamp(u_material.y, 0.045, 1.0);
+    vec4 albedoSample = texture2D(s_albedo, v_texcoord0);
+    vec4 metallicRoughnessSample = texture2D(s_metallicRoughness, v_texcoord0);
+    float ao = texture2D(s_ao, v_texcoord0).r;
+    vec3 emissiveSample = texture2D(s_emissive, v_texcoord0).rgb;
+
+    vec3 albedo = max(v_color0.rgb * u_tint.rgb * albedoSample.rgb, vec3(0.0, 0.0, 0.0));
+    float metallic = saturate(u_material.x * metallicRoughnessSample.b);
+    float roughness = clamp(u_material.y * metallicRoughnessSample.g, 0.045, 1.0);
     float emissiveStrength = max(u_material.z, 0.0);
     float nDotL = max(dot(normal, lightDirection), 0.0);
     float nDotV = max(dot(normal, viewDirection), 0.0);
@@ -71,11 +86,11 @@ void main()
     vec3 diffuseEnergy = (vec3(1.0, 1.0, 1.0) - fresnel) * (1.0 - metallic);
     vec3 radiance = u_lightColor.rgb * u_lightColor.a;
     vec3 direct = (diffuseEnergy * albedo / 3.14159265 + specular) * radiance * nDotL;
-    vec3 ambient = albedo * u_ambientColor.rgb * u_ambientColor.a * (1.0 - metallic);
-    vec3 emissive = albedo * emissiveStrength;
+    vec3 ambient = albedo * u_ambientColor.rgb * u_ambientColor.a * (1.0 - metallic) * ao;
+    vec3 emissive = albedo * emissiveSample * emissiveStrength;
 
     vec3 color = (direct + ambient + emissive) * max(u_cameraData.w, 0.001);
     color = acesTonemap(color);
     color = pow(color, vec3(1.0 / 2.2, 1.0 / 2.2, 1.0 / 2.2));
-    gl_FragColor = vec4(color, u_tint.a * v_color0.a);
+    gl_FragColor = vec4(color, u_tint.a * v_color0.a * albedoSample.a);
 }
