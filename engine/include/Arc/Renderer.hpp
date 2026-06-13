@@ -144,6 +144,15 @@ namespace Arc
         void setAutoExposureEnabled(bool enabled) { m_autoExposureEnabled = enabled; }
         [[nodiscard]] bool autoExposureEnabled() const { return m_autoExposureEnabled; }
 
+        void setSsaoEnabled(bool enabled) { m_ssaoEnabled = enabled; }
+        [[nodiscard]] bool ssaoEnabled() const { return m_ssaoEnabled; }
+
+        void setSsrEnabled(bool enabled) { m_ssrEnabled = enabled; }
+        [[nodiscard]] bool ssrEnabled() const { return m_ssrEnabled; }
+
+        void setSsgiEnabled(bool enabled) { m_ssgiEnabled = enabled; }
+        [[nodiscard]] bool ssgiEnabled() const { return m_ssgiEnabled; }
+
     private:
         struct Handles;
 
@@ -190,6 +199,9 @@ namespace Arc
         bool m_motionBlurEnabled = true;
         bool m_autoExposureEnabled = false;
         bool m_tonemapEnabled = false;
+        bool m_ssaoEnabled = true;
+        bool m_ssrEnabled = true;
+        bool m_ssgiEnabled = false;
         std::uint32_t m_taaHistoryIndex = 0;
         std::uint32_t m_luminanceIndex = 0;
         float m_deltaTime = 0.016f;

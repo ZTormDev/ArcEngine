@@ -27,24 +27,29 @@ namespace Arc
     constexpr bgfx::ViewId ViewIdShadow3 = 3;
     constexpr bgfx::ViewId ViewIdSkybox  = 4;
     constexpr bgfx::ViewId ViewIdScene   = 5;
-    constexpr bgfx::ViewId ViewIdBloomDown0 = 6;
-    constexpr bgfx::ViewId ViewIdBloomDown1 = 7;
-    constexpr bgfx::ViewId ViewIdBloomDown2 = 8;
-    constexpr bgfx::ViewId ViewIdBloomDown3 = 9;
-    constexpr bgfx::ViewId ViewIdBloomUp0   = 10;
-    constexpr bgfx::ViewId ViewIdBloomUp1   = 11;
-    constexpr bgfx::ViewId ViewIdBloomUp2   = 12;
-    constexpr bgfx::ViewId ViewIdDepthOfField = 13;
-    constexpr bgfx::ViewId ViewIdTAA = 14;
-    constexpr bgfx::ViewId ViewIdMotionBlur = 15;
-    constexpr bgfx::ViewId ViewIdLuminanceDown0 = 16;
-    constexpr bgfx::ViewId ViewIdLuminanceDown1 = 17;
-    constexpr bgfx::ViewId ViewIdLuminanceDown2 = 18;
-    constexpr bgfx::ViewId ViewIdLuminanceDown3 = 19;
-    constexpr bgfx::ViewId ViewIdLuminanceDown4 = 20;
-    constexpr bgfx::ViewId ViewIdLuminanceAdapt = 21;
-    constexpr bgfx::ViewId ViewIdPostProcess = 22;
-    constexpr bgfx::ViewId ViewCount       = 23;
+    constexpr bgfx::ViewId ViewIdSSAO    = 6;
+    constexpr bgfx::ViewId ViewIdSSAOBlur = 7;
+    constexpr bgfx::ViewId ViewIdSSR     = 8;
+    constexpr bgfx::ViewId ViewIdSSGI    = 9;
+    constexpr bgfx::ViewId ViewIdSceneCombine = 10;
+    constexpr bgfx::ViewId ViewIdBloomDown0 = 11;
+    constexpr bgfx::ViewId ViewIdBloomDown1 = 12;
+    constexpr bgfx::ViewId ViewIdBloomDown2 = 13;
+    constexpr bgfx::ViewId ViewIdBloomDown3 = 14;
+    constexpr bgfx::ViewId ViewIdBloomUp0   = 15;
+    constexpr bgfx::ViewId ViewIdBloomUp1   = 16;
+    constexpr bgfx::ViewId ViewIdBloomUp2   = 17;
+    constexpr bgfx::ViewId ViewIdDepthOfField = 18;
+    constexpr bgfx::ViewId ViewIdTAA = 19;
+    constexpr bgfx::ViewId ViewIdMotionBlur = 20;
+    constexpr bgfx::ViewId ViewIdLuminanceDown0 = 21;
+    constexpr bgfx::ViewId ViewIdLuminanceDown1 = 22;
+    constexpr bgfx::ViewId ViewIdLuminanceDown2 = 23;
+    constexpr bgfx::ViewId ViewIdLuminanceDown3 = 24;
+    constexpr bgfx::ViewId ViewIdLuminanceDown4 = 25;
+    constexpr bgfx::ViewId ViewIdLuminanceAdapt = 26;
+    constexpr bgfx::ViewId ViewIdPostProcess = 27;
+    constexpr bgfx::ViewId ViewCount       = 28;
 
     namespace
     {
@@ -348,9 +353,10 @@ namespace Arc
         bgfx::UniformHandle cameraForwardUniform = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle cascadeSplitsUniform = BGFX_INVALID_HANDLE;
         
-        // HDR Scene Framebuffer & Velocity (MRT)
+        // HDR Scene Framebuffer, Velocity, GBuffer Normal (MRT)
         bgfx::TextureHandle hdrColorTexture = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle velocityTexture = BGFX_INVALID_HANDLE;
+        bgfx::TextureHandle gbufferNormalTexture = BGFX_INVALID_HANDLE;
         bgfx::TextureHandle hdrDepthTexture = BGFX_INVALID_HANDLE;
         bgfx::FrameBufferHandle hdrFrameBuffer = BGFX_INVALID_HANDLE;
 
@@ -405,7 +411,38 @@ namespace Arc
         bgfx::UniformHandle historyTexSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle velocityTexSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle depthTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle gbufferNormalSampler = BGFX_INVALID_HANDLE;
         bgfx::UniformHandle luminanceTexSampler = BGFX_INVALID_HANDLE;
+
+        // SSAO, SSR, SSGI & Combine handles
+        bgfx::TextureHandle ssaoTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle ssaoFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle ssaoProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle ssaoParamsUniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle ssaoParams2Uniform = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle cameraProjParamsUniform = BGFX_INVALID_HANDLE;
+
+        bgfx::TextureHandle ssaoBlurTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle ssaoBlurFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle ssaoBlurProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle ssaoTexSampler = BGFX_INVALID_HANDLE;
+
+        bgfx::TextureHandle ssrTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle ssrFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle ssrProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle ssrParamsUniform = BGFX_INVALID_HANDLE;
+
+        bgfx::TextureHandle ssgiTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle ssgiFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle ssgiProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle ssgiParamsUniform = BGFX_INVALID_HANDLE;
+
+        bgfx::TextureHandle compositeTexture = BGFX_INVALID_HANDLE;
+        bgfx::FrameBufferHandle compositeFrameBuffer = BGFX_INVALID_HANDLE;
+        bgfx::ProgramHandle compositeProgram = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle ssrTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle ssgiTexSampler = BGFX_INVALID_HANDLE;
+        bgfx::UniformHandle combineParamsUniform = BGFX_INVALID_HANDLE;
 
         // Velocity tracking uniforms
         bgfx::UniformHandle prevModelUniform = BGFX_INVALID_HANDLE;
@@ -546,6 +583,41 @@ namespace Arc
             m_handles->motionBlurTexture = BGFX_INVALID_HANDLE;
         }
 
+        if (bgfx::isValid(m_handles->ssaoFrameBuffer))
+        {
+            bgfx::destroy(m_handles->ssaoFrameBuffer);
+            m_handles->ssaoFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->ssaoTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->ssaoBlurFrameBuffer))
+        {
+            bgfx::destroy(m_handles->ssaoBlurFrameBuffer);
+            m_handles->ssaoBlurFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->ssaoBlurTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->ssrFrameBuffer))
+        {
+            bgfx::destroy(m_handles->ssrFrameBuffer);
+            m_handles->ssrFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->ssrTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->ssgiFrameBuffer))
+        {
+            bgfx::destroy(m_handles->ssgiFrameBuffer);
+            m_handles->ssgiFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->ssgiTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->compositeFrameBuffer))
+        {
+            bgfx::destroy(m_handles->compositeFrameBuffer);
+            m_handles->compositeFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->compositeTexture = BGFX_INVALID_HANDLE;
+        }
+
         for (int i = 0; i < 5; ++i)
         {
             if (bgfx::isValid(m_handles->luminanceDownFrameBuffers[i]))
@@ -591,6 +663,7 @@ namespace Arc
             m_handles->hdrFrameBuffer = BGFX_INVALID_HANDLE;
             m_handles->hdrColorTexture = BGFX_INVALID_HANDLE;
             m_handles->velocityTexture = BGFX_INVALID_HANDLE;
+            m_handles->gbufferNormalTexture = BGFX_INVALID_HANDLE;
             m_handles->hdrDepthTexture = BGFX_INVALID_HANDLE;
         }
 
@@ -644,6 +717,41 @@ namespace Arc
             m_handles->motionBlurTexture = BGFX_INVALID_HANDLE;
         }
 
+        if (bgfx::isValid(m_handles->ssaoFrameBuffer))
+        {
+            bgfx::destroy(m_handles->ssaoFrameBuffer);
+            m_handles->ssaoFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->ssaoTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->ssaoBlurFrameBuffer))
+        {
+            bgfx::destroy(m_handles->ssaoBlurFrameBuffer);
+            m_handles->ssaoBlurFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->ssaoBlurTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->ssrFrameBuffer))
+        {
+            bgfx::destroy(m_handles->ssrFrameBuffer);
+            m_handles->ssrFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->ssrTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->ssgiFrameBuffer))
+        {
+            bgfx::destroy(m_handles->ssgiFrameBuffer);
+            m_handles->ssgiFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->ssgiTexture = BGFX_INVALID_HANDLE;
+        }
+
+        if (bgfx::isValid(m_handles->compositeFrameBuffer))
+        {
+            bgfx::destroy(m_handles->compositeFrameBuffer);
+            m_handles->compositeFrameBuffer = BGFX_INVALID_HANDLE;
+            m_handles->compositeTexture = BGFX_INVALID_HANDLE;
+        }
+
         for (int i = 0; i < 5; ++i)
         {
             if (bgfx::isValid(m_handles->luminanceDownFrameBuffers[i]))
@@ -659,33 +767,31 @@ namespace Arc
         m_handles->hdrColorTexture = bgfx::createTexture2D(
             static_cast<std::uint16_t>(m_width),
             static_cast<std::uint16_t>(m_height),
-            false,
-            1,
-            bgfx::TextureFormat::RGBA16F,
-            rtFlags
+            false, 1, bgfx::TextureFormat::RGBA16F, rtFlags
         );
         m_handles->velocityTexture = bgfx::createTexture2D(
             static_cast<std::uint16_t>(m_width),
             static_cast<std::uint16_t>(m_height),
-            false,
-            1,
-            bgfx::TextureFormat::RGBA16F,
-            rtFlags
+            false, 1, bgfx::TextureFormat::RGBA16F, rtFlags
+        );
+        // GBuffer normal: view-space normals packed to [0,1] in RGBA8
+        m_handles->gbufferNormalTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false, 1, bgfx::TextureFormat::RGBA8, rtFlags
         );
         m_handles->hdrDepthTexture = bgfx::createTexture2D(
             static_cast<std::uint16_t>(m_width),
             static_cast<std::uint16_t>(m_height),
-            false,
-            1,
-            bgfx::TextureFormat::D32F,
-            rtFlags
+            false, 1, bgfx::TextureFormat::D32F, rtFlags
         );
 
-        bgfx::Attachment hdrAttachments[3];
-        hdrAttachments[0].init(m_handles->hdrColorTexture, bgfx::Access::Write);
-        hdrAttachments[1].init(m_handles->velocityTexture, bgfx::Access::Write);
-        hdrAttachments[2].init(m_handles->hdrDepthTexture, bgfx::Access::Write);
-        m_handles->hdrFrameBuffer = bgfx::createFrameBuffer(3, hdrAttachments, true);
+        bgfx::Attachment hdrAttachments[4];
+        hdrAttachments[0].init(m_handles->hdrColorTexture,      bgfx::Access::Write);
+        hdrAttachments[1].init(m_handles->velocityTexture,      bgfx::Access::Write);
+        hdrAttachments[2].init(m_handles->gbufferNormalTexture, bgfx::Access::Write);
+        hdrAttachments[3].init(m_handles->hdrDepthTexture,      bgfx::Access::Write);
+        m_handles->hdrFrameBuffer = bgfx::createFrameBuffer(4, hdrAttachments, true);
 
         // 2. Create Bloom Downsample levels (W/2, W/4, W/8, W/16)
         std::uint16_t w = static_cast<std::uint16_t>(m_width);
@@ -821,7 +927,96 @@ namespace Arc
         bgfx::setViewRect(ViewIdLuminanceAdapt, 0, 0, 1, 1);
         bgfx::setViewClear(ViewIdLuminanceAdapt, BGFX_CLEAR_NONE, 0, 1.0f, 0);
 
-        // 9. Configure skybox and scene views (Views 4 and 5) to draw on the HDR framebuffer
+        // 9. Create SSAO & SSAO Blur framebuffers (R8 for occlusion)
+        m_handles->ssaoTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::R8,
+            rtFlags
+        );
+        {
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->ssaoTexture, bgfx::Access::Write);
+            m_handles->ssaoFrameBuffer = bgfx::createFrameBuffer(1, &attachment, true);
+        }
+        bgfx::setViewFrameBuffer(ViewIdSSAO, m_handles->ssaoFrameBuffer);
+        bgfx::setViewRect(ViewIdSSAO, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdSSAO, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        m_handles->ssaoBlurTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::R8,
+            rtFlags
+        );
+        {
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->ssaoBlurTexture, bgfx::Access::Write);
+            m_handles->ssaoBlurFrameBuffer = bgfx::createFrameBuffer(1, &attachment, true);
+        }
+        bgfx::setViewFrameBuffer(ViewIdSSAOBlur, m_handles->ssaoBlurFrameBuffer);
+        bgfx::setViewRect(ViewIdSSAOBlur, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdSSAOBlur, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 10. Create SSR framebuffer (RGBA16F)
+        m_handles->ssrTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::RGBA16F,
+            rtFlags
+        );
+        {
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->ssrTexture, bgfx::Access::Write);
+            m_handles->ssrFrameBuffer = bgfx::createFrameBuffer(1, &attachment, true);
+        }
+        bgfx::setViewFrameBuffer(ViewIdSSR, m_handles->ssrFrameBuffer);
+        bgfx::setViewRect(ViewIdSSR, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdSSR, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 11. Create SSGI framebuffer (RGBA16F)
+        m_handles->ssgiTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::RGBA16F,
+            rtFlags
+        );
+        {
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->ssgiTexture, bgfx::Access::Write);
+            m_handles->ssgiFrameBuffer = bgfx::createFrameBuffer(1, &attachment, true);
+        }
+        bgfx::setViewFrameBuffer(ViewIdSSGI, m_handles->ssgiFrameBuffer);
+        bgfx::setViewRect(ViewIdSSGI, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdSSGI, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 12. Create Composite framebuffer (RGBA16F)
+        m_handles->compositeTexture = bgfx::createTexture2D(
+            static_cast<std::uint16_t>(m_width),
+            static_cast<std::uint16_t>(m_height),
+            false,
+            1,
+            bgfx::TextureFormat::RGBA16F,
+            rtFlags
+        );
+        {
+            bgfx::Attachment attachment;
+            attachment.init(m_handles->compositeTexture, bgfx::Access::Write);
+            m_handles->compositeFrameBuffer = bgfx::createFrameBuffer(1, &attachment, true);
+        }
+        bgfx::setViewFrameBuffer(ViewIdSceneCombine, m_handles->compositeFrameBuffer);
+        bgfx::setViewRect(ViewIdSceneCombine, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
+        bgfx::setViewClear(ViewIdSceneCombine, BGFX_CLEAR_NONE, 0, 1.0f, 0);
+
+        // 13. Configure skybox and scene views (Views 4 and 5) to draw on the HDR framebuffer
         bgfx::setViewFrameBuffer(ViewIdSkybox, m_handles->hdrFrameBuffer);
         bgfx::setViewRect(ViewIdSkybox, 0, 0, static_cast<std::uint16_t>(m_width), static_cast<std::uint16_t>(m_height));
         bgfx::setViewClear(ViewIdSkybox, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x101820ff, 1.0f, 0);
@@ -1467,6 +1662,140 @@ namespace Arc
 
         bgfx::TextureHandle currentSource = m_handles->hdrColorTexture;
 
+        // --- SSAO Pass ---
+        if (m_ssaoEnabled)
+        {
+            bgfx::setViewFrameBuffer(ViewIdSSAO, m_handles->ssaoFrameBuffer);
+
+            float tanHalfFovY = std::tan(m_activeCamera.verticalFovDegrees * (3.14159265f / 180.0f) * 0.5f);
+            float aspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+            float tanHalfFovX = tanHalfFovY * aspect;
+
+            float projectionParams[4] = {
+                tanHalfFovX,
+                tanHalfFovY,
+                m_activeCamera.nearPlane,
+                m_activeCamera.farPlane
+            };
+            bgfx::setUniform(m_handles->cameraProjParamsUniform, projectionParams);
+
+            float ssaoParams[4] = {
+                static_cast<float>(m_width),
+                static_cast<float>(m_height),
+                0.5f, // radius
+                0.015f // bias
+            };
+            bgfx::setUniform(m_handles->ssaoParamsUniform, ssaoParams);
+
+            float ssaoParams2[4] = {
+                2.0f, // intensity
+                0.0f,
+                0.0f,
+                0.0f
+            };
+            bgfx::setUniform(m_handles->ssaoParams2Uniform, ssaoParams2);
+
+            bgfx::setTexture(0, m_handles->depthTexSampler,        m_handles->hdrDepthTexture);
+            bgfx::setTexture(1, m_handles->gbufferNormalSampler,    m_handles->gbufferNormalTexture);
+            renderFullScreenQuad(ViewIdSSAO, m_handles->ssaoProgram);
+
+            // --- SSAO Blur Pass ---
+            bgfx::setViewFrameBuffer(ViewIdSSAOBlur, m_handles->ssaoBlurFrameBuffer);
+            bgfx::setUniform(m_handles->cameraProjParamsUniform, projectionParams);
+            bgfx::setUniform(m_handles->ssaoParamsUniform, ssaoParams);
+            bgfx::setTexture(0, m_handles->ssaoTexSampler, m_handles->ssaoTexture);
+            bgfx::setTexture(1, m_handles->depthTexSampler, m_handles->hdrDepthTexture);
+            renderFullScreenQuad(ViewIdSSAOBlur, m_handles->ssaoBlurProgram);
+        }
+
+        // --- SSR Pass ---
+        if (m_ssrEnabled)
+        {
+            bgfx::setViewFrameBuffer(ViewIdSSR, m_handles->ssrFrameBuffer);
+
+            float ssrParams[4] = {
+                static_cast<float>(m_width),
+                static_cast<float>(m_height),
+                18.0f, // maxDistance
+                0.22f  // stepLength
+            };
+            bgfx::setUniform(m_handles->ssrParamsUniform, ssrParams);
+
+            float tanHalfFovY = std::tan(m_activeCamera.verticalFovDegrees * (3.14159265f / 180.0f) * 0.5f);
+            float aspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+            float tanHalfFovX = tanHalfFovY * aspect;
+
+            float projectionParams[4] = {
+                tanHalfFovX,
+                tanHalfFovY,
+                m_activeCamera.nearPlane,
+                m_activeCamera.farPlane
+            };
+            bgfx::setUniform(m_handles->cameraProjParamsUniform, projectionParams);
+
+            bgfx::setTexture(0, m_handles->sceneTexSampler,     m_handles->hdrColorTexture);
+            bgfx::setTexture(1, m_handles->depthTexSampler,     m_handles->hdrDepthTexture);
+            bgfx::setTexture(2, m_handles->velocityTexSampler,  m_handles->velocityTexture);
+            bgfx::setTexture(3, m_handles->gbufferNormalSampler,m_handles->gbufferNormalTexture);
+            // Slot 4: previous-frame bloom (written last frame, safe to read before this frame's bloom pass)
+            if (bgfx::isValid(m_handles->bloomDownTextures[0]))
+                bgfx::setTexture(4, m_handles->bloomTexSampler, m_handles->bloomDownTextures[0]);
+            renderFullScreenQuad(ViewIdSSR, m_handles->ssrProgram);
+        }
+
+        // --- SSGI Pass ---
+        if (m_ssgiEnabled)
+        {
+            bgfx::setViewFrameBuffer(ViewIdSSGI, m_handles->ssgiFrameBuffer);
+
+            float ssgiParams[4] = {
+                static_cast<float>(m_width),
+                static_cast<float>(m_height),
+                3.8f, // maxDistance
+                1.4f  // intensity
+            };
+            bgfx::setUniform(m_handles->ssgiParamsUniform, ssgiParams);
+
+            float tanHalfFovY = std::tan(m_activeCamera.verticalFovDegrees * (3.14159265f / 180.0f) * 0.5f);
+            float aspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+            float tanHalfFovX = tanHalfFovY * aspect;
+
+            float projectionParams[4] = {
+                tanHalfFovX,
+                tanHalfFovY,
+                m_activeCamera.nearPlane,
+                m_activeCamera.farPlane
+            };
+            bgfx::setUniform(m_handles->cameraProjParamsUniform, projectionParams);
+
+            bgfx::setTexture(0, m_handles->sceneTexSampler,      m_handles->hdrColorTexture);
+            bgfx::setTexture(1, m_handles->depthTexSampler,      m_handles->hdrDepthTexture);
+            bgfx::setTexture(2, m_handles->gbufferNormalSampler, m_handles->gbufferNormalTexture);
+            renderFullScreenQuad(ViewIdSSGI, m_handles->ssgiProgram);
+        }
+
+        // --- Scene Combine / Composite Pass ---
+        if (m_ssaoEnabled || m_ssrEnabled || m_ssgiEnabled)
+        {
+            bgfx::setViewFrameBuffer(ViewIdSceneCombine, m_handles->compositeFrameBuffer);
+
+            float combineParams[4] = {
+                m_ssaoEnabled ? 1.0f : 0.0f,
+                m_ssrEnabled ? 1.0f : 0.0f,
+                m_ssgiEnabled ? 1.0f : 0.0f,
+                0.0f
+            };
+            bgfx::setUniform(m_handles->combineParamsUniform, combineParams);
+
+            bgfx::setTexture(0, m_handles->sceneTexSampler, m_handles->hdrColorTexture);
+            bgfx::setTexture(1, m_handles->ssaoTexSampler, m_handles->ssaoBlurTexture);
+            bgfx::setTexture(2, m_handles->ssrTexSampler, m_handles->ssrTexture);
+            bgfx::setTexture(3, m_handles->ssgiTexSampler, m_handles->ssgiTexture);
+            renderFullScreenQuad(ViewIdSceneCombine, m_handles->compositeProgram);
+
+            currentSource = m_handles->compositeTexture;
+        }
+
         // 3. Temporal Anti-Aliasing (TAA) Resolve Pass
         if (m_taaEnabled)
         {
@@ -1479,7 +1808,7 @@ namespace Arc
             float taaJitter[4] = { m_jitterX * 0.5f, -m_jitterY * 0.5f, m_prevJitterX * 0.5f, -m_prevJitterY * 0.5f };
             bgfx::setUniform(m_handles->taaJitterUniform, taaJitter);
 
-            bgfx::setTexture(0, m_handles->currentTexSampler, m_handles->hdrColorTexture);
+            bgfx::setTexture(0, m_handles->currentTexSampler, currentSource);
             bgfx::setTexture(1, m_handles->historyTexSampler, m_handles->taaHistoryTextures[1 - m_taaHistoryIndex]);
             bgfx::setTexture(2, m_handles->velocityTexSampler, m_handles->velocityTexture);
             renderFullScreenQuad(ViewIdTAA, m_handles->taaProgram);
@@ -1616,7 +1945,11 @@ namespace Arc
             m_motionBlurEnabled ? "ON" : "OFF",
             m_autoExposureEnabled ? "ON" : "OFF",
             m_bloomEnabled ? "ON" : "OFF");
-        bgfx::dbgTextPrintf(1, 6, 0x0e, "Tonemapping (ACES): %s", m_tonemapEnabled ? "ON" : "OFF");
+        bgfx::dbgTextPrintf(1, 6, 0x0e, "Tonemapping (ACES): %s | SSAO: %s | SSR: %s | SSGI: %s", 
+            m_tonemapEnabled ? "ON" : "OFF",
+            m_ssaoEnabled ? "ON" : "OFF",
+            m_ssrEnabled ? "ON" : "OFF",
+            m_ssgiEnabled ? "ON" : "OFF");
         bgfx::dbgTextPrintf(1, 7, 0x0f, "Controls: Move: WASD/QE | Look: hold RMB | Fast: Shift | Quit: Esc");
 
         // Swap TAA and Luminance history buffers
@@ -1724,13 +2057,20 @@ namespace Arc
         m_handles->motionBlurProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_motion_blur.sc.bin"));
         m_handles->luminanceDownProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_luminance_down.sc.bin"));
         m_handles->luminanceAdaptProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_luminance_adapt.sc.bin"));
+        m_handles->ssaoProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_ssao.sc.bin"));
+        m_handles->ssaoBlurProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_ssao_blur.sc.bin"));
+        m_handles->ssrProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_ssr.sc.bin"));
+        m_handles->ssgiProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_ssgi.sc.bin"));
+        m_handles->compositeProgram = loadProgram(shaderPath("vs_post.sc.bin"), shaderPath("fs_scene_combine.sc.bin"));
 
         if(!valid(m_handles->meshProgram) || !valid(m_handles->skyProgram) || 
            !valid(m_handles->shadowProgram) || !valid(m_handles->bloomDownProgram) || 
            !valid(m_handles->bloomUpProgram) || !valid(m_handles->postProgram) ||
            !valid(m_handles->taaProgram) || !valid(m_handles->dofProgram) ||
            !valid(m_handles->motionBlurProgram) || !valid(m_handles->luminanceDownProgram) ||
-           !valid(m_handles->luminanceAdaptProgram))
+           !valid(m_handles->luminanceAdaptProgram) || !valid(m_handles->ssaoProgram) ||
+           !valid(m_handles->ssaoBlurProgram) || !valid(m_handles->ssrProgram) ||
+           !valid(m_handles->ssgiProgram) || !valid(m_handles->compositeProgram))
         {
             throw std::runtime_error("Failed to create BGFX shader programs.");
         }
@@ -1762,15 +2102,27 @@ namespace Arc
         m_handles->lowTexSampler = bgfx::createUniform("s_lowTex", bgfx::UniformType::Sampler);
         m_handles->highTexSampler = bgfx::createUniform("s_highTex", bgfx::UniformType::Sampler);
 
+        m_handles->ssaoParamsUniform = bgfx::createUniform("u_ssaoParams", bgfx::UniformType::Vec4);
+        m_handles->ssaoParams2Uniform = bgfx::createUniform("u_ssaoParams2", bgfx::UniformType::Vec4);
+        m_handles->cameraProjParamsUniform = bgfx::createUniform("u_cameraProjParams", bgfx::UniformType::Vec4);
+        m_handles->ssrParamsUniform = bgfx::createUniform("u_ssrParams", bgfx::UniformType::Vec4);
+        m_handles->ssgiParamsUniform = bgfx::createUniform("u_ssgiParams", bgfx::UniformType::Vec4);
+        m_handles->combineParamsUniform = bgfx::createUniform("u_combineParams", bgfx::UniformType::Vec4);
+
+        m_handles->ssaoTexSampler = bgfx::createUniform("s_ssaoTex", bgfx::UniformType::Sampler);
+        m_handles->ssrTexSampler = bgfx::createUniform("s_ssrTex", bgfx::UniformType::Sampler);
+        m_handles->ssgiTexSampler = bgfx::createUniform("s_ssgiTex", bgfx::UniformType::Sampler);
+
         m_handles->taaParamsUniform = bgfx::createUniform("u_taaParams", bgfx::UniformType::Vec4);
         m_handles->dofParamsUniform = bgfx::createUniform("u_dofParams", bgfx::UniformType::Vec4);
         m_handles->motionBlurParamsUniform = bgfx::createUniform("u_motionBlurParams", bgfx::UniformType::Vec4);
         m_handles->adaptationParamsUniform = bgfx::createUniform("u_adaptationParams", bgfx::UniformType::Vec4);
 
-        m_handles->currentTexSampler = bgfx::createUniform("s_currentTex", bgfx::UniformType::Sampler);
-        m_handles->historyTexSampler = bgfx::createUniform("s_historyTex", bgfx::UniformType::Sampler);
-        m_handles->velocityTexSampler = bgfx::createUniform("s_velocityTex", bgfx::UniformType::Sampler);
-        m_handles->depthTexSampler = bgfx::createUniform("s_depthTex", bgfx::UniformType::Sampler);
+        m_handles->currentTexSampler = bgfx::createUniform("s_currentTex",   bgfx::UniformType::Sampler);
+        m_handles->historyTexSampler  = bgfx::createUniform("s_historyTex",   bgfx::UniformType::Sampler);
+        m_handles->velocityTexSampler = bgfx::createUniform("s_velocityTex",  bgfx::UniformType::Sampler);
+        m_handles->depthTexSampler    = bgfx::createUniform("s_depthTex",     bgfx::UniformType::Sampler);
+        m_handles->gbufferNormalSampler = bgfx::createUniform("s_gbufferNormal", bgfx::UniformType::Sampler);
         m_handles->luminanceTexSampler = bgfx::createUniform("s_luminanceTex", bgfx::UniformType::Sampler);
 
         m_handles->prevModelUniform = bgfx::createUniform("u_prevModel", bgfx::UniformType::Mat4);
@@ -2144,6 +2496,85 @@ namespace Arc
         {
             bgfx::destroy(m_handles->taaJitterUniform);
             m_handles->taaJitterUniform = BGFX_INVALID_HANDLE;
+        }
+
+        // SSAO, SSR, SSGI & Composite cleanup
+        if(valid(m_handles->ssaoProgram))
+        {
+            bgfx::destroy(m_handles->ssaoProgram);
+            m_handles->ssaoProgram = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->ssaoBlurProgram))
+        {
+            bgfx::destroy(m_handles->ssaoBlurProgram);
+            m_handles->ssaoBlurProgram = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->ssrProgram))
+        {
+            bgfx::destroy(m_handles->ssrProgram);
+            m_handles->ssrProgram = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->ssgiProgram))
+        {
+            bgfx::destroy(m_handles->ssgiProgram);
+            m_handles->ssgiProgram = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->compositeProgram))
+        {
+            bgfx::destroy(m_handles->compositeProgram);
+            m_handles->compositeProgram = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->ssaoParamsUniform))
+        {
+            bgfx::destroy(m_handles->ssaoParamsUniform);
+            m_handles->ssaoParamsUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->ssaoParams2Uniform))
+        {
+            bgfx::destroy(m_handles->ssaoParams2Uniform);
+            m_handles->ssaoParams2Uniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->cameraProjParamsUniform))
+        {
+            bgfx::destroy(m_handles->cameraProjParamsUniform);
+            m_handles->cameraProjParamsUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->ssrParamsUniform))
+        {
+            bgfx::destroy(m_handles->ssrParamsUniform);
+            m_handles->ssrParamsUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->ssgiParamsUniform))
+        {
+            bgfx::destroy(m_handles->ssgiParamsUniform);
+            m_handles->ssgiParamsUniform = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->combineParamsUniform))
+        {
+            bgfx::destroy(m_handles->combineParamsUniform);
+            m_handles->combineParamsUniform = BGFX_INVALID_HANDLE;
+        }
+
+        if(valid(m_handles->ssaoTexSampler))
+        {
+            bgfx::destroy(m_handles->ssaoTexSampler);
+            m_handles->ssaoTexSampler = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->ssrTexSampler))
+        {
+            bgfx::destroy(m_handles->ssrTexSampler);
+            m_handles->ssrTexSampler = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->ssgiTexSampler))
+        {
+            bgfx::destroy(m_handles->ssgiTexSampler);
+            m_handles->ssgiTexSampler = BGFX_INVALID_HANDLE;
+        }
+        if(valid(m_handles->gbufferNormalSampler))
+        {
+            bgfx::destroy(m_handles->gbufferNormalSampler);
+            m_handles->gbufferNormalSampler = BGFX_INVALID_HANDLE;
         }
     }
 

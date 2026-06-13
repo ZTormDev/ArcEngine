@@ -128,7 +128,7 @@ void main()
     float geoNDotL = max(dot(vertexNormal, lightDirection), 0.0);
 
     // Apply dynamic normal offset bias scaled by the cascade's world-space texel size and geometric slope
-    float normalOffsetFactor = clamp(0.05 * (1.0 - geoNDotL), 0.01, 0.06);
+    float normalOffsetFactor = clamp(0.06 * (1.0 - geoNDotL), 0.06, 0.08);
     float normalOffset = normalOffsetFactor * biasScale;
     vec3 biasedWorldPos = v_worldPosition + vertexNormal * normalOffset;
 
@@ -238,5 +238,9 @@ void main()
     if (velocity.y * 0.0 != 0.0) velocity.y = 0.0;
 
     gl_FragData[0] = vec4(color, u_tint.a * v_color0.a * albedoSample.a);
-    gl_FragData[1] = vec4(velocity, 0.0, 1.0);
+    gl_FragData[1] = vec4(velocity, roughness, metallic);
+
+    // GBuffer normal: transform world-space normal to view-space, pack to [0,1]
+    vec3 viewSpaceNormal = normalize(mul(u_view, vec4(normal, 0.0)).xyz);
+    gl_FragData[2] = vec4(viewSpaceNormal * 0.5 + 0.5, 1.0);
 }
