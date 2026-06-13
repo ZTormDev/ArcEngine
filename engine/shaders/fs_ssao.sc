@@ -11,15 +11,11 @@ uniform vec4 u_ssaoParams2;      // x: intensity
 
 float getLinearDepth(vec2 uv)
 {
-    float ndcDepth = texture2DLod(s_depthTex, uv, 0.0).r;
-    float n = u_cameraProjParams.z;
-    float f = u_cameraProjParams.w;
-    return (n * f) / (f - ndcDepth * (f - n));
+    return texture2DLod(s_depthTex, uv, 0.0).r;
 }
 
-vec3 getViewPos(vec2 uv)
+vec3 getViewPos(vec2 uv, float depth)
 {
-    float depth = getLinearDepth(uv);
     // UV Y is flipped vs NDC Y in DirectX/BGFX
     float ndcX =  (uv.x * 2.0 - 1.0);
     float ndcY = -(uv.y * 2.0 - 1.0);
@@ -32,15 +28,15 @@ void main()
 {
     vec2 uv = v_texcoord0;
 
-    // Skip sky
-    float rawD = texture2DLod(s_depthTex, uv, 0.0).r;
-    if (rawD >= 0.9999)
+    // Skip sky (using linear depth threshold close to far plane)
+    float depth = getLinearDepth(uv);
+    if (depth >= u_cameraProjParams.w - 2.0)
     {
         gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         return;
     }
 
-    vec3 viewPos = getViewPos(uv);
+    vec3 viewPos = getViewPos(uv, depth);
 
     // Read exact GBuffer normal — no derivative artifacts on curved surfaces
     vec3 normal = texture2DLod(s_gbufferNormal, uv, 0.0).xyz * 2.0 - 1.0;

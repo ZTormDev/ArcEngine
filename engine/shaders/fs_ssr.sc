@@ -16,21 +16,9 @@ uniform vec4 u_cameraProjParams;
 // ---------------------------------------------------------------------------
 // Depth helpers
 // ---------------------------------------------------------------------------
-float rawDepth(vec2 uv)
-{
-    return texture2DLod(s_depthTex, uv, 0.0).r;
-}
-
-float linearizeDepth(float ndcZ)
-{
-    float n = u_cameraProjParams.z;
-    float f = u_cameraProjParams.w;
-    return (n * f) / (f - ndcZ * (f - n));
-}
-
 float sampleLinearDepth(vec2 uv)
 {
-    return linearizeDepth(rawDepth(uv));
+    return texture2DLod(s_depthTex, uv, 0.0).r;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,15 +70,14 @@ void main()
         return;
     }
 
-    // Skip sky / far plane
-    float rawD = rawDepth(uv);
-    if (rawD >= 0.9999)
+    // Skip sky / far plane (using linear depth threshold close to far plane)
+    float eyeDepth = sampleLinearDepth(uv);
+    if (eyeDepth >= u_cameraProjParams.w - 2.0)
     {
         gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
         return;
     }
 
-    float eyeDepth = linearizeDepth(rawD);
     vec3 vsPos     = viewPosFromUV(uv, eyeDepth);
 
     // Read the exact GBuffer normal — no derivative approximation needed
@@ -105,8 +92,8 @@ void main()
     // ---------------------------------------------------------------------------
     float maxDistance = u_ssrParams.z;
     float stepSize    = u_ssrParams.w;
-    const int maxSteps = 64;
-    const int binSteps = 8;
+    const int maxSteps = 32;
+    const int binSteps = 4;
     float thickness = 0.3;
 
     // Interleaved gradient noise — low discrepancy, stable

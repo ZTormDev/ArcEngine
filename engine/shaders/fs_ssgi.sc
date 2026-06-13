@@ -4,36 +4,19 @@ $input v_texcoord0
 
 SAMPLER2D(s_sceneTex, 0); // Scene color (original HDR scene)
 SAMPLER2D(s_depthTex, 1); // Depth buffer
+SAMPLER2D(s_gbufferNormal, 2); // View-space normal, packed [0,1]
 
 uniform vec4 u_ssgiParams;       // x: screenWidth, y: screenHeight, z: maxDistance, w: intensity
 uniform vec4 u_cameraProjParams; // x: tanHalfFovX, y: tanHalfFovY, z: nearPlane, w: farPlane
 
 float getLinearDepth(vec2 uv)
 {
-    float ndcDepth = texture2DLod(s_depthTex, uv, 0.0).r;
-    float near = u_cameraProjParams.z;
-    float far = u_cameraProjParams.w;
-    return (near * far) / (far - ndcDepth * (far - near));
+    return texture2DLod(s_depthTex, uv, 0.0).r;
 }
 
-vec3 getViewPos(vec2 uv)
+vec3 getViewPos(vec2 uv, float depth)
 {
-    float depth = getLinearDepth(uv);
     return vec3((uv * 2.0 - 1.0) * u_cameraProjParams.xy * depth, -depth);
-}
-
-vec3 getNormal(vec3 viewPos, vec2 uv)
-{
-    float dx = 1.0 / u_ssgiParams.x;
-    float dy = 1.0 / u_ssgiParams.y;
-
-    vec3 viewPosR = getViewPos(uv + vec2(dx, 0.0));
-    vec3 viewPosT = getViewPos(uv + vec2(0.0, dy));
-
-    vec3 dX = viewPosR - viewPos;
-    vec3 dY = viewPosT - viewPos;
-
-    return normalize(cross(dX, dY));
 }
 
 void main()
@@ -48,8 +31,9 @@ void main()
         return;
     }
 
-    vec3 viewPos = getViewPos(uv);
-    vec3 normal = getNormal(viewPos, uv);
+    vec3 viewPos = getViewPos(uv, depth);
+    vec3 normal = texture2DLod(s_gbufferNormal, uv, 0.0).xyz * 2.0 - 1.0;
+    normal = normalize(normal);
 
     // Generate pseudo-random rotation angle using pixel noise
     float noise = fract(sin(dot(uv * u_ssgiParams.xy, vec2(12.9898, 78.233))) * 43758.5453);
@@ -76,7 +60,7 @@ void main()
 
     float maxDistance = u_ssgiParams.z; // e.g. 3.0
     float intensity = u_ssgiParams.w;   // e.g. 1.5
-    float stepSize = maxDistance / 5.0; // 5 steps per ray
+    float stepSize = maxDistance / 3.0; // 3 steps per ray
     float thickness = 0.5;
 
     vec3 indirectLight = vec3(0.0, 0.0, 0.0);
@@ -90,7 +74,7 @@ void main()
         // Offset starting point slightly along normal to prevent self-intersection
         vec3 rayStart = viewPos + normal * 0.08;
 
-        for (int s = 1; s <= 5; ++s)
+        for (int s = 1; s <= 3; ++s)
         {
             float dist = stepSize * (float(s) - 0.5 * noise); // Jitter step distance to reduce banding
             vec3 currentPos = rayStart + D * dist;

@@ -79,6 +79,7 @@ if(COMMAND bgfx_compile_shaders)
             "${ARC_SHADER_SOURCE_DIR}/fs_motion_blur.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_luminance_down.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_luminance_adapt.sc"
+            "${ARC_SHADER_SOURCE_DIR}/fs_linear_depth.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_ssao.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_ssao_blur.sc"
             "${ARC_SHADER_SOURCE_DIR}/fs_ssr.sc"

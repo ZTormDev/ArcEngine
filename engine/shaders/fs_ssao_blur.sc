@@ -10,10 +10,7 @@ uniform vec4 u_cameraProjParams; // x: tanHalfFovX, y: tanHalfFovY, z: nearPlane
 
 float getLinearDepth(vec2 uv)
 {
-    float ndcDepth = texture2D(s_depthTex, uv).r;
-    float near = u_cameraProjParams.z;
-    float far = u_cameraProjParams.w;
-    return (near * far) / (far - ndcDepth * (far - near));
+    return texture2D(s_depthTex, uv).r;
 }
 
 void main()
