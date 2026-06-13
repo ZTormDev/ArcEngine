@@ -15,12 +15,14 @@ Current engine modules:
 - `Camera` and `FreeCamera`: basic first-person camera movement.
 - `Renderer`: BGFX shader programs, procedural cube/sphere/plane geometry, uploaded static meshes, texture cache, fallback textures, PBR material texture binding, directional light, skybox, FPS/debug overlay.
 
-Rendering roadmap for more photorealistic projects:
+Systems roadmap for advanced game engine development:
 
-- Real shadow maps for sun and local lights.
-- HDR image-based lighting and reflection probes.
-- Texture-backed materials: albedo, normal, roughness, metallic, ambient occlusion.
-- glTF asset loading.
-- Post-processing: bloom, exposure, color grading, SSAO, depth of field.
+- Custom memory management & profiling (Tracy).
+- Entity Component System (ECS) & Scene Graph.
+- 3D Physics (Jolt/PhysX integration).
+- Skeletal animation & vertex skinning.
+- Gameplay scripting (Lua/sol2).
+- Spatial audio (SoLoud/OpenAL).
+- Virtual File System (VFS) & Asset Packaging.
 
-See `docs/AdvancedRoadmap.md` for the milestone plan.
+See docs/AdvancedRoadmap.md for the milestone plan.
