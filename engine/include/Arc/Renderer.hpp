@@ -110,6 +110,9 @@ namespace Arc
         void drawCube(const Transform& transform, const Transform& prevTransform, const Material& material);
         void drawSphere(const Transform& transform, const Transform& prevTransform, const Material& material);
         void drawMesh(MeshHandle mesh, const Transform& transform, const Transform& prevTransform, const Material& material);
+        void drawCube(const float* matrix, const float* prevMatrix, const Material& material);
+        void drawSphere(const float* matrix, const float* prevMatrix, const Material& material);
+        void drawMesh(MeshHandle mesh, const float* matrix, const float* prevMatrix, const Material& material);
         void drawSun(const DirectionalLight& light, float distance, float size);
         void endFrame();
 
@@ -164,6 +167,8 @@ namespace Arc
         void destroyPrograms();
         void setObjectTransform(const Transform& transform);
         void setPrevObjectTransform(const Transform& transform);
+        void setObjectMatrix(const float* matrix);
+        void setPrevObjectMatrix(const float* matrix);
         void setPbrUniforms(const Material& material);
         void bindShadowUniformsAndTextures();
         [[nodiscard]] std::string shaderPath(const char* shaderName) const;

@@ -2,6 +2,9 @@
 
 #include "Arc/Input.hpp"
 #include "Arc/Renderer.hpp"
+#include "Arc/Memory.hpp"
+#include "Arc/Console.hpp"
+#include "Arc/Profiler.hpp"
 
 #include <bgfx/bgfx.h>
 #include <bgfx/platform.h>
@@ -58,10 +61,10 @@ namespace Arc
             onStart();
 
             const std::uint64_t performanceFrequency = SDL_GetPerformanceFrequency();
-            const double targetFrameTime = 1.0 / 1000.0; // 1000 FPS limit
 
             while(m_running)
             {
+                ARC_PROFILE_ZONE();
                 m_input->beginFrame();
                 processEvents();
 
@@ -70,7 +73,10 @@ namespace Arc
                     static_cast<double>(performanceFrequency);
 
                 // Precise hybrid sleep/spin frame rate limiter
-                if (deltaSeconds < targetFrameTime)
+                const int fpsLimit = Console::instance().getCVarValue<int>("sys_fps_limit", 1000);
+                const double targetFrameTime = fpsLimit > 0 ? 1.0 / static_cast<double>(fpsLimit) : 0.0;
+
+                if (targetFrameTime > 0.0 && deltaSeconds < targetFrameTime)
                 {
                     double timeToWait = targetFrameTime - deltaSeconds;
                     std::uint32_t delayMs = static_cast<std::uint32_t>(timeToWait * 1000.0);
@@ -89,11 +95,17 @@ namespace Arc
 
                 m_lastCounter = currentCounter;
 
-                onUpdate(static_cast<float>(deltaSeconds));
+                const float speedMult = Console::instance().getCVarValue<float>("sys_speed", 1.0f);
+                const float scaledDelta = static_cast<float>(deltaSeconds) * speedMult;
+
+                onUpdate(scaledDelta);
                 m_renderer->beginFrame();
-                m_renderer->setFrameStats(static_cast<float>(deltaSeconds));
+                m_renderer->setFrameStats(scaledDelta);
                 onRender(*m_renderer);
                 m_renderer->endFrame();
+
+                FrameAllocator::reset();
+                ARC_PROFILE_FRAME();
             }
 
             onShutdown();
@@ -135,6 +147,35 @@ namespace Arc
 
     void Application::initialize()
     {
+        // 1. Initialize FrameAllocator (16 MB transient buffer)
+        FrameAllocator::initialize(16 * 1024 * 1024);
+
+        // 2. Register application CVars
+        Console::instance().registerCVar("sys_fps_limit", "Maximum frames per second (0 to disable limit)", 1000);
+        Console::instance().registerCVar("sys_speed", "Multiplier applied to update delta seconds", 1.0f);
+        Console::instance().registerCVar("r_vsync", "Enable vertical synchronization (0=off, 1=on)", 0, [this](const CVarValue& val) {
+            int vsync = std::get<int>(val);
+            if (m_bgfxInitialized && m_renderer != nullptr)
+            {
+                std::uint32_t resetFlags = vsync ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
+                bgfx::reset(width(), height(), resetFlags);
+                m_renderer->resize(width(), height());
+            }
+        });
+
+        // Register default quit command
+        Console::instance().registerCommand("quit", [this](const std::vector<std::string>&) {
+            this->quit();
+        });
+        Console::instance().registerCommand("exit", [this](const std::vector<std::string>&) {
+            this->quit();
+        });
+
+        // 3. Start reading stdin in the background
+        Console::instance().startStdinThread();
+
+        ARC_PROFILE_ZONE();
+
         if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0)
         {
             throw std::runtime_error(sdlError("Failed to initialize SDL2"));
@@ -175,13 +216,15 @@ namespace Arc
         throw std::runtime_error("This Arc template maps SDL2 native windows for Windows/Visual Studio builds.");
 #endif
 
+        int vsync = Console::instance().getCVarValue<int>("r_vsync", 0);
+
         bgfx::Init init;
         init.type = bgfx::RendererType::Vulkan;
         init.vendorId = BGFX_PCI_ID_NONE;
         init.platformData = platformData;
         init.resolution.width = m_config.width;
         init.resolution.height = m_config.height;
-        init.resolution.reset = BGFX_RESET_NONE;
+        init.resolution.reset = vsync ? BGFX_RESET_VSYNC : BGFX_RESET_NONE;
 
         if(!bgfx::init(init))
         {
@@ -259,6 +302,10 @@ namespace Arc
 
     void Application::shutdown()
     {
+        ARC_PROFILE_ZONE();
+
+        Console::instance().stopStdinThread();
+
         if(m_renderer != nullptr)
         {
             m_renderer->shutdown();
@@ -291,6 +338,8 @@ namespace Arc
         }
 
         m_running = false;
+
+        FrameAllocator::shutdown();
     }
 
     Input& Application::input()

@@ -1629,6 +1629,99 @@ namespace Arc
         m_stats.meshDraws++;
     }
 
+    void Renderer::drawCube(const float* matrix, const float* prevMatrix, const Material& material)
+    {
+        if(!m_sceneActive)
+        {
+            return;
+        }
+
+        for (bgfx::ViewId i = 0; i < 4; ++i)
+        {
+            setObjectMatrix(matrix);
+            bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
+            bgfx::setIndexBuffer(m_handles->cubeIndexBuffer);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW);
+            bgfx::submit(i, m_handles->shadowProgram);
+        }
+
+        setObjectMatrix(matrix);
+        setPrevObjectMatrix(prevMatrix);
+        setPbrUniforms(material);
+        bindShadowUniformsAndTextures();
+        bgfx::setVertexBuffer(0, m_handles->cubeVertexBuffer);
+        bgfx::setIndexBuffer(m_handles->cubeIndexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(ViewIdScene, m_handles->meshProgram);
+
+        m_stats.drawCalls += 5;
+        m_stats.meshDraws++;
+    }
+
+    void Renderer::drawSphere(const float* matrix, const float* prevMatrix, const Material& material)
+    {
+        if(!m_sceneActive)
+        {
+            return;
+        }
+
+        for (bgfx::ViewId i = 0; i < 4; ++i)
+        {
+            setObjectMatrix(matrix);
+            bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
+            bgfx::setIndexBuffer(m_handles->sphereIndexBuffer);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW);
+            bgfx::submit(i, m_handles->shadowProgram);
+        }
+
+        setObjectMatrix(matrix);
+        setPrevObjectMatrix(prevMatrix);
+        setPbrUniforms(material);
+        bindShadowUniformsAndTextures();
+        bgfx::setVertexBuffer(0, m_handles->sphereVertexBuffer);
+        bgfx::setIndexBuffer(m_handles->sphereIndexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(ViewIdScene, m_handles->meshProgram);
+
+        m_stats.drawCalls += 5;
+        m_stats.meshDraws++;
+    }
+
+    void Renderer::drawMesh(MeshHandle mesh, const float* matrix, const float* prevMatrix, const Material& material)
+    {
+        if(!m_sceneActive || !mesh.isValid() || mesh.id >= m_handles->gpuMeshes.size())
+        {
+            return;
+        }
+
+        const Handles::GpuMesh& gpuMesh = m_handles->gpuMeshes[mesh.id];
+        if(!gpuMesh.alive)
+        {
+            return;
+        }
+
+        for (bgfx::ViewId i = 0; i < 4; ++i)
+        {
+            setObjectMatrix(matrix);
+            bgfx::setVertexBuffer(0, gpuMesh.vertexBuffer);
+            bgfx::setIndexBuffer(gpuMesh.indexBuffer);
+            bgfx::setState(BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS | BGFX_STATE_CULL_CW);
+            bgfx::submit(i, m_handles->shadowProgram);
+        }
+
+        setObjectMatrix(matrix);
+        setPrevObjectMatrix(prevMatrix);
+        setPbrUniforms(material);
+        bindShadowUniformsAndTextures();
+        bgfx::setVertexBuffer(0, gpuMesh.vertexBuffer);
+        bgfx::setIndexBuffer(gpuMesh.indexBuffer);
+        bgfx::setState(BGFX_STATE_WRITE_RGB | BGFX_STATE_WRITE_A | BGFX_STATE_WRITE_Z | BGFX_STATE_DEPTH_TEST_LESS);
+        bgfx::submit(ViewIdScene, m_handles->meshProgram);
+
+        m_stats.drawCalls += 5;
+        m_stats.meshDraws++;
+    }
+
     void Renderer::drawSun(const DirectionalLight& light, float distance, float size)
     {
         const Vec3 sunPosition = m_activeCamera.position + normalize(light.direction) * -distance;
@@ -2675,6 +2768,16 @@ namespace Arc
             transform.position.x,
             transform.position.y,
             transform.position.z);
+        bgfx::setUniform(m_handles->prevModelUniform, matrix);
+    }
+
+    void Renderer::setObjectMatrix(const float* matrix)
+    {
+        bgfx::setTransform(matrix);
+    }
+
+    void Renderer::setPrevObjectMatrix(const float* matrix)
+    {
         bgfx::setUniform(m_handles->prevModelUniform, matrix);
     }
 

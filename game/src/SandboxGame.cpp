@@ -2,6 +2,8 @@
 
 #include <cstddef>
 #include <iostream>
+#include <cstdlib>
+#include <ctime>
 
 class SandboxGame final : public Arc::Application
 {
@@ -12,14 +14,85 @@ public:
     }
 
 private:
+    void testAllocators()
+    {
+        std::cout << "\n--- Testing Custom Allocators ---\n";
+        
+        // Linear Allocator
+        alignas(16) char linearBuffer[1024];
+        Arc::LinearAllocator linear(sizeof(linearBuffer), linearBuffer);
+        int* linearInt = static_cast<int*>(linear.allocate(sizeof(int), alignof(int)));
+        if (linearInt) {
+            *linearInt = 42;
+            std::cout << "Linear Allocator: Success, value = " << *linearInt << ", used memory = " << linear.getUsedMemory() << " bytes\n";
+        }
+
+        // Stack Allocator
+        alignas(16) char stackBuffer[1024];
+        Arc::StackAllocator stack(sizeof(stackBuffer), stackBuffer);
+        auto marker = stack.getMarker();
+        double* stackDouble = static_cast<double*>(stack.allocate(sizeof(double), alignof(double)));
+        if (stackDouble) {
+            *stackDouble = 3.14159;
+            std::cout << "Stack Allocator: Success, value = " << *stackDouble << ", used memory = " << stack.getUsedMemory() << " bytes\n";
+        }
+        stack.freeToMarker(marker);
+        std::cout << "Stack Allocator: Rolled back marker, used memory = " << stack.getUsedMemory() << " bytes\n";
+
+        // Pool Allocator
+        alignas(16) char poolBuffer[1024];
+        struct TempObj { char data[16]; };
+        Arc::PoolAllocator pool(sizeof(TempObj), alignof(TempObj), sizeof(poolBuffer), poolBuffer);
+        void* obj1 = pool.allocate(sizeof(TempObj), alignof(TempObj));
+        void* obj2 = pool.allocate(sizeof(TempObj), alignof(TempObj));
+        (void)obj2;
+        std::cout << "Pool Allocator: Allocated 2 blocks of size 16, used memory = " << pool.getUsedMemory() << " bytes\n";
+        pool.deallocate(obj1);
+        std::cout << "Pool Allocator: Deallocated 1 block, used memory = " << pool.getUsedMemory() << " bytes\n";
+
+        // Frame Allocator
+        int* frameInt = Arc::FrameAllocator::make<int>(1337);
+        if (frameInt) {
+            std::cout << "Frame Allocator: Successfully allocated transient int with value = " << *frameInt << "\n";
+        }
+        std::cout << "---------------------------------\n\n";
+    }
+
     void onStart() override
     {
+        std::srand(static_cast<unsigned int>(std::time(nullptr)));
+
         m_camera.camera().position = { 0.0f, 2.4f, 9.5f };
         m_camera.camera().pitch = Arc::radians(-10.0f);
 
         buildScene();
 
+        // Run allocator validation tests
+        testAllocators();
+
+        // Register custom console command
+        Arc::Console::instance().registerCommand("spawn_cube", [this](const std::vector<std::string>& args) {
+            (void)args;
+            float rX = static_cast<float>(std::rand() % 100) / 10.0f - 5.0f;
+            float rY = static_cast<float>(std::rand() % 40) / 10.0f + 0.5f;
+            float rZ = static_cast<float>(std::rand() % 100) / 10.0f - 5.0f;
+
+            const Arc::Material randomColor{
+                { static_cast<float>(std::rand() % 100) / 100.0f,
+                  static_cast<float>(std::rand() % 100) / 100.0f,
+                  static_cast<float>(std::rand() % 100) / 100.0f,
+                  1.0f },
+                0.0f,
+                0.5f,
+                0.0f
+            };
+
+            m_scene.addCube("Spawned Cube", { { rX, rY, rZ }, {}, { 0.5f, 0.5f, 0.5f } }, randomColor);
+            std::cout << "Spawned new cube at position: (" << rX << ", " << rY << ", " << rZ << ")\n";
+        });
+
         std::cout << "ArcGame started. Hold right mouse button to look. WASD/QE to move.\n";
+        std::cout << "Developer Console active. Type commands in this console window (e.g. 'help', 'spawn_cube', 'sys_speed 0.5', 'sys_fps_limit 60').\n";
     }
 
     void onUpdate(float deltaSeconds) override
@@ -28,9 +101,16 @@ private:
         m_camera.update(input(), deltaSeconds);
 
         m_cubeRotation += deltaSeconds * 0.6f;
-        m_scene.objects()[m_animatedCubeIndex].transform.rotation = { m_cubeRotation * 0.4f, m_cubeRotation, 0.0f };
+        
+        // Rotate the parent cube via its TransformComponent
+        if (m_scene.registry().isValid(m_animatedCubeEntity))
+        {
+            auto& tc = m_scene.registry().get<Arc::TransformComponent>(m_animatedCubeEntity);
+            tc.rotation = { m_cubeRotation * 0.4f, m_cubeRotation, 0.0f };
+        }
 
-        m_scene.updatePreviousTransforms();
+        // Recursively compute the parent-child transform hierarchy
+        m_scene.updateTransforms();
     }
 
     void onRender(Arc::Renderer& renderer) override
@@ -70,8 +150,13 @@ private:
         m_scene.addCube("Left Pillar", { { -5.4f, 0.9f, 3.8f }, {}, { 0.38f, 0.9f, 0.38f } }, warmWall);
         m_scene.addCube("Right Pillar", { { 5.4f, 0.9f, 3.8f }, {}, { 0.38f, 0.9f, 0.38f } }, warmWall);
 
-        m_animatedCubeIndex = m_scene.objects().size();
-        m_scene.addCube("Animated Blue Cube", { { 0.0f, 1.05f, 0.0f }, {}, { 1.0f, 1.0f, 1.0f } }, bluePlastic);
+        // Spawn Parent Cube
+        m_animatedCubeEntity = m_scene.addCube("Animated Blue Cube", { { 0.0f, 1.5f, 0.0f }, {}, { 1.2f, 1.2f, 1.2f } }, bluePlastic);
+        
+        // Spawn Child Sphere and link it to the Parent Cube
+        m_childSphereEntity = m_scene.addSphere("Orbiting Child Sphere", { { 2.2f, 0.0f, 0.0f }, {}, { 0.5f, 0.5f, 0.5f } }, whiteCeramic);
+        m_scene.setParent(m_childSphereEntity, m_animatedCubeEntity);
+
         m_scene.addCube("Rough Red Box", { { -3.5f, 0.65f, -1.6f }, { 0.0f, 0.35f, 0.0f }, { 0.7f, 0.65f, 0.7f } }, roughRed);
         m_scene.addCube("Tall Metal Block", { { 3.1f, 1.35f, -2.4f }, { 0.0f, -0.25f, 0.0f }, { 0.65f, 1.35f, 0.65f } }, brushedMetal);
         m_scene.addSphere("Metal Sphere", { { -1.9f, 0.75f, 2.2f }, {}, { 0.75f, 0.75f, 0.75f } }, brushedMetal);
@@ -98,7 +183,8 @@ private:
         { 1.0f, 0.68f, 0.28f, 1.0f }
     };
     float m_cubeRotation = 0.0f;
-    std::size_t m_animatedCubeIndex = 0;
+    Arc::Entity m_animatedCubeEntity = Arc::NullEntity;
+    Arc::Entity m_childSphereEntity = Arc::NullEntity;
 };
 
 int main()

@@ -3,6 +3,11 @@ find_package(bgfx CONFIG REQUIRED)
 find_package(Vulkan REQUIRED)
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 
+option(ARC_ENABLE_TRACY "Enable Tracy profiler integration" OFF)
+if(ARC_ENABLE_TRACY)
+    find_package(tracy CONFIG REQUIRED)
+endif()
+
 add_library(ArcEngine STATIC
     include/Arc/Application.hpp
     include/Arc/Camera.hpp
@@ -13,12 +18,17 @@ add_library(ArcEngine STATIC
     include/Arc/Renderer.hpp
     include/Arc/Scene.hpp
     include/Arc/AssetManager.hpp
+    include/Arc/Memory.hpp
+    include/Arc/Console.hpp
+    include/Arc/Profiler.hpp
     src/AssetManager.cpp
     src/Application.cpp
     src/Camera.cpp
     src/Input.cpp
     src/Renderer.cpp
     src/Scene.cpp
+    src/Memory.cpp
+    src/Console.cpp
 )
 
 add_library(Arc::Engine ALIAS ArcEngine)
@@ -47,6 +57,11 @@ target_link_libraries(ArcEngine
         bgfx::bgfx
         Vulkan::Vulkan
 )
+
+if(ARC_ENABLE_TRACY)
+    target_link_libraries(ArcEngine PRIVATE tracy::tracy)
+    target_compile_definitions(ArcEngine PUBLIC TRACY_ENABLE)
+endif()
 
 set(ARC_SHADER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 set(ARC_SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/generated/shaders")
